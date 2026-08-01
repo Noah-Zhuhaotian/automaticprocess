@@ -10,7 +10,7 @@ requested to be built one step at a time:
    drives (Engineer, Drafting, Admin), with fixed subfolders on the
    Engineer drive.
 2. **Fill Word** — auto-fill Word document templates (Project register,
-   PS1 Producer Statement) from one shared data-entry wizard.
+   PS1 Producer Statement, LBP form) from one shared data-entry wizard.
 3. **Fill timesheet website** — auto-submit the same data to a website
    that records work hours/project info. Not started — there is no
    separate "fill the website" UI step; it's meant to reuse data already
@@ -22,20 +22,23 @@ communicates in Chinese but explicitly asked for an English codebase).
 Repo: https://github.com/Noah-Zhuhaotian/automaticprocess.git, branch
 `main`. The full wizard rebuild (Word template filling, real checkboxes,
 bullet lists) was committed and pushed as `4c27d83` ("Rebuild GUI as a
-wizard and implement Word template filling") — that was this handoff's
-previous "commit and push" action item, now done. On top of that, three
-small GUI refinements (folder-conflict blocking, editable council names,
-greyed-out checkboxes — see below) are being committed and pushed as
-part of *this* handoff.
+wizard and implement Word template filling"). A follow-up commit
+(`7174142`, "Block folder-conflict navigation, add council rename, grey
+out unfilled checkboxes") added three GUI refinements. On top of both of
+those, *this* handoff's changes — splitting Address into
+Street/Suburb/Town and adding the LBP form as a third generated document
+— are being committed and pushed next.
 
-Note: `resources/templates/LBP form.docx` is sitting untracked in the
-working tree (added 2026-07-28, not referenced anywhere in code yet).
-Left out of git deliberately for now — the user's push token wasn't set
-up when it appeared, and it hasn't been asked about since. Don't commit
-it opportunistically; ask first, since it's presumably staged for a
-not-yet-defined feature (LBP = Licensed Building Practitioner, a plausible
-fit for the still-undefined Specification or B2 Letter step, but that's
-a guess, not confirmed).
+`resources/templates/LBP form.docx` (LBP = Licensed Building
+Practitioner "Certificate of Design Work" memorandum) is now tracked and
+wired into `_on_create`. It arrived in the working tree pre-populated by
+the user with `{{street}}`/`{{suburb}}`/`{{town}}`/`{{client_info}}`/
+`{{date}}` tokens already placed in its first table and its signature
+block — those didn't need any code-side work, `fill_docx_template`
+picked them up for free. The "restricted building work" table (6 rows,
+one per Scope item, each with a real checkbox content control) needed a
+one-off migration exactly like the original PS1 checkboxes did — see
+"Word filling" below.
 
 ## Current Progress
 
@@ -59,7 +62,8 @@ app/
 resources/templates/
 ├── Project register.docx            # working template
 ├── PS1 Producer Statement.docx      # working template
-└── PS1 Producer Statement orginal.docx  # untouched client original — KEEP, see below
+├── PS1 Producer Statement orginal.docx  # untouched client original — KEEP, see below
+└── LBP form.docx                    # working template — checkboxes/cells migrated in place, no "original" copy kept (see Word filling)
 
 build_scripts/   # empty aside from a README placeholder
 tests/           # empty — no automated tests, everything verified via ad hoc scripts
@@ -78,18 +82,19 @@ single content frame that gets destroyed/rebuilt per step:
    path"** button (top-right of the header row — deliberately a plain
    `ttk.Button`, *not* a native OS menu bar; a menu bar was tried first
    and looked like an unclickable white strip on the user's machine).
-2. **General** — Job number, Client info, Address (all required), Scope
+2. **General** — Job number, Client info, **Street / Suburb / Town**
+   (three separate required fields as of this handoff — previously one
+   combined "Address" field; see "Address split" below), Scope
    (6 checkboxes, each gates a multi-line description `tk.Text` — must
    fill a description if checked, and at least one item must be
    checked), Role (radio, required). Also does a *live* folder-name
    availability check (`folder_creator.check_availability`) on
-   Job-number/Address focus-out, shown in green/red under the fields —
-   and, as of this handoff, `_validate_general_step` re-runs that same
-   `check_availability` call and **blocks Next** with an error dialog if
-   it finds a conflict, so the user can no longer click past a
-   already-exists folder name; they have to change Job number or Address
-   first. Previously the red text was purely informational and didn't
-   stop navigation.
+   Job-number/Street focus-out (Suburb/Town don't affect the folder name
+   and aren't part of the check), shown in green/red under the fields —
+   and `_validate_general_step` re-runs that same `check_availability`
+   call and **blocks Next** with an error dialog if it finds a conflict,
+   so the user can no longer click past an already-exists folder name;
+   they have to change Job number or Street first.
 3. **PS1 Input** — Council name (combobox backed by a persisted list in
    settings + "Add Council..." to grow it live, plus an "Edit Council..."
    button added this handoff — `_edit_council_name` renames whichever
@@ -116,14 +121,15 @@ single content frame that gets destroyed/rebuilt per step:
 5. **B2 Letter** — stub, one placeholder label. No details gathered yet.
 6. **Review & Create** — the Next button becomes "Create" on the last
    step. Runs `folder_creator.create_project_folders`, then
-   `word_filler.fill_docx_template` for each of the two templates
-   (skipped individually if its template file is missing — this is how
-   Specification/B2 Letter documents will slot in later, once their
-   templates exist), then shows a summary `messagebox`, then calls
-   `_reset_for_new_project()` which blanks every *project* field
-   (job number, address, scope, PS1 fields, date, etc.) and jumps back to
-   the General step — but leaves drive settings and the saved council
-   list alone, since those are machine config, not project data.
+   `word_filler.fill_docx_template` for each of the **three** templates
+   (Project register, PS1, LBP form — skipped individually if its
+   template file is missing, which is how Specification/B2 Letter
+   documents will slot in later, once their templates exist), then shows
+   a summary `messagebox`, then calls `_reset_for_new_project()` which
+   blanks every *project* field (job number, street/suburb/town, scope,
+   PS1 fields, date, etc.) and jumps back to the General step — but
+   leaves drive settings and the saved council list alone, since those
+   are machine config, not project data.
 
 ### Word filling ([app/core/word_filler.py](app/core/word_filler.py))
 
@@ -183,18 +189,59 @@ Caller-side contract ([app/gui/main_window.py](app/gui/main_window.py)):
 `_build_replacements()` returns the plain-text + checkbox dict;
 `_build_scope_lines()` returns the plain description strings (no manual
 `"- "` prefix — the bullet glyph is a real list marker now) passed
-separately as `bullet_lists={"scope": [...]}`. Both templates get the
-*same* `bullet_lists["scope"]` — no special-casing needed between them
-now that it's real paragraphs, unlike an earlier plain-text version that
-needed a manually-injected leading `"\n"` for one template but not the
-other.
+separately as `bullet_lists={"scope": [...]}`. All three templates get
+the *same* `bullet_lists["scope"]` (harmless no-op for LBP, which has no
+`{{scope}}` token) — no special-casing needed between them now that it's
+real paragraphs, unlike an earlier plain-text version that needed a
+manually-injected leading `"\n"` for one template but not the other.
+
+**Address → Street/Suburb/Town split (this handoff):** the General step's
+single "Address" field is now three fields. The project folder name and
+the Project register/PS1 templates' existing `{{address}}` token are
+both fed from **Street only** (`build_project_folder_name` in
+`folder_creator.py` was renamed `address` → `street` throughout, and
+`_build_replacements()` sets `"address": street` — the token name in
+those two templates wasn't touched, only what value it gets). Suburb and
+Town are new `{{suburb}}`/`{{town}}` tokens, currently only consumed by
+the LBP form.
+
+**LBP form's "restricted building work" table (this handoff):** table 1
+in `LBP form.docx` has 6 item rows (Foundation, Retaining, Beams, Portal,
+Bracing, Others — same order as `SCOPE_ITEMS`), each with a real
+`<w:sdt>`/`<w14:checkbox>` control (already present in the file the user
+added, just like PS1's — Word had it, it just wasn't tagged) plus 3 empty
+data cells (Description / Carried out by-Supervised by / Referenced on
+drawings). None of these had `{{token}}` text or a `<w:tag>` yet, so a
+one-off migration script (`migrate_lbp.py`, run once against the working
+template the same two-phase way as the PS1 checkbox migration — copy
+first, verify, then the real file) added:
+- `<w:tag w:val="lbp_{key}_box">` to each checkbox's `sdtPr` (schema
+  order matters: `rPr`, then `tag`, then `id`, then `w14:checkbox` — see
+  the PS1 checkboxes for the reference structure), and
+- a `{{lbp_{key}_description}}` / `{{lbp_{key}_carried_by}}` /
+  `{{lbp_{key}_reference}}` run into each of the 3 empty cells,
+
+where `key` is the lowercased `SCOPE_ITEMS` name. **No changes to
+`word_filler.py` were needed at all** — `_iter_all_paragraphs` and
+`_iter_checkbox_controls` already walk the entire document subtree via
+`.iter()`, which finds paragraphs/sdts nested inside table cells (and
+inside a `<w:sdt>` sitting as a direct sibling of `<w:tc>` in the row,
+which is how these checkboxes are wired into the grid — not inside a
+`<w:tc>` themselves) for free. `_build_replacements()` in
+`main_window.py` fills all 18 of these tokens per item: checked → the
+Scope description text, the Role value ("Carried out"/"Supervised" — the
+exact string already used for `ROLE_OPTIONS`, no mapping needed) in
+Carried-out, and `f"Engsolution drawings #{job_number}"` in Reference;
+unchecked → all three left as `""`.
 
 ### Step 1 logic ([app/core/folder_creator.py](app/core/folder_creator.py))
-unchanged since the first handoff — see git history / code for details.
-Folder name = `"{Job Number} - {Address}"`; Engineer drive gets 6 fixed
-subfolders (`01 Architectural` … `06 Consent Document`); PS1 Producer
-Statement.docx is generated *inside* `06 Consent Document`, Project
-register.docx at the Engineer project root; two-phase
+Folder name = `"{Job Number} - {Street}"` (was `{Address}` before this
+handoff's split — see "Address → Street/Suburb/Town split" above; every
+function's `address` parameter was renamed `street`, no behavior change
+beyond which GUI field feeds it). Engineer drive gets 6 fixed subfolders
+(`01 Architectural` … `06 Consent Document`); PS1 Producer Statement.docx
+and LBP form.docx are both generated *inside* `06 Consent Document`,
+Project register.docx at the Engineer project root; two-phase
 validate-then-create so a name collision never leaves a partial mess.
 
 ## What Worked
@@ -237,6 +284,15 @@ validate-then-create so a name collision never leaves a partial mess.
   `!selected` so a disabled-but-checked box still greys out (ttk style
   maps use first-match-wins). Confirmed visually via screenshot — labels
   for unchecked items render grey, checked items render black.
+- **The PS1 checkbox migration pattern generalized cleanly to a second,
+  differently-shaped template.** LBP form's checkboxes live inside a
+  table (as `<w:sdt>` siblings of `<w:tc>`, not descendants of one) and
+  needed matching empty table cells filled with tokens too, not just
+  tags — same "inspect the real XML, don't guess" and "script it,
+  verify on a copy, then run for real" workflow from the PS1 handoff
+  worked unchanged. Confirmed end-to-end with a full `create_project_folders`
+  + `fill_docx_template` smoke test against real (test) drives, not just
+  unit-level checks.
 
 ## What Didn't Work / Avoid Repeating
 
@@ -295,37 +351,39 @@ validate-then-create so a name collision never leaves a partial mess.
 
 ## Next Steps
 
-1. **Manually click through the three refinements above** (folder-conflict
-   block, Edit Council, greyed checkboxes) — they were only verified by
-   code review plus one static screenshot (confirmed the grey/black
-   checkbox contrast), not a full interactive pass, because the attempted
-   automated interaction closed the app unexpectedly (see "What Didn't
-   Work"). Nothing suggests a bug, but this handoff can't claim
-   end-to-end verification the way Steps 1–2 originally got.
-2. **`resources/templates/LBP form.docx`** is untracked in the working
-   tree, deliberately left out of the commit that produced this handoff
-   (see the Repo note above — user's push token wasn't set up yet when
-   it appeared). Ask the user what it's for before adding it to git or
-   wiring it into any step.
-3. **Specification step** — completely undefined. Need the same
-   treatment PS1 got: the user will eventually provide a template/mockup;
-   ask for the actual file, inspect its XML for any non-obvious
-   formatting (checkboxes, bullets, highlights) before assuming plain
-   `{{token}}` substitution is enough.
-4. **B2 Letter step** — same as above, undefined.
-5. **Consent Document folder** (`06 Consent Document`) currently only
-   gets the PS1 Producer Statement. The user mentioned other documents
-   belong in that folder too, mentioned only in passing early on — worth
-   re-confirming what else, if anything, still needs to land there.
-6. **Step 3 (website submission)** — completely unstarted, no URL, no
+1. **Manually click through the app end-to-end at least once.**
+   Everything in this handoff (folder-conflict block, Edit Council,
+   greyed checkboxes, Street/Suburb/Town split, LBP form) was verified
+   either by code review, one static screenshot, or a *headless* smoke
+   script that calls `folder_creator`/`word_filler` directly and inspects
+   the resulting `.docx` — never by actually running the tkinter wizard
+   and clicking through it, because an earlier attempt at simulating
+   clicks/keystrokes closed the app unexpectedly (see "What Didn't
+   Work" in the previous entry). Nothing suggests a bug, but this
+   handoff can't claim the same real-GUI verification Steps 1–2
+   originally got — worth the user doing one real click-through,
+   especially opening the generated LBP form.docx in Word to confirm the
+   checkboxes/table read correctly (they were only checked via
+   python-docx, never visually in Word).
+2. **Specification step** — completely undefined. Need the same
+   treatment PS1/LBP got: the user will eventually provide a
+   template/mockup; ask for the actual file, inspect its XML for any
+   non-obvious formatting (checkboxes, bullets, highlights, tables)
+   before assuming plain `{{token}}` substitution is enough.
+3. **B2 Letter step** — same as above, undefined.
+4. **Consent Document folder** (`06 Consent Document`) now gets PS1 and
+   LBP form. The user mentioned other documents belong there too,
+   mentioned only in passing early on — worth re-confirming what else,
+   if anything, still needs to land there.
+5. **Step 3 (website submission)** — completely unstarted, no URL, no
    auth method, no field mapping gathered yet. `web_filler.py` is an
    untouched stub.
-7. **Packaging (PyInstaller)** — still deferred per the user's original
+6. **Packaging (PyInstaller)** — still deferred per the user's original
    preference (get functionality working first). Worth floating again
    now that Steps 1–2 are functionally complete, in case the user wants
    an early build to test on their own machine before Specification/B2
    Letter/Step 3 are done.
-8. No automated tests exist (`tests/` is empty aside from `__init__.py`).
+7. No automated tests exist (`tests/` is empty aside from `__init__.py`).
    Everything so far was verified via ad hoc scripts run through the Bash
    tool, not committed as reusable tests. Consider adding real pytest
    coverage for `folder_creator` and `word_filler` (the run-splicing and

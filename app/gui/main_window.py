@@ -63,6 +63,7 @@ def _format_ordinal_date(value: datetime.date) -> str:
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "resources" / "templates"
 PROJECT_REGISTER_TEMPLATE = TEMPLATES_DIR / "Project register.docx"
 PS1_TEMPLATE = TEMPLATES_DIR / "PS1 Producer Statement.docx"
+LBP_TEMPLATE = TEMPLATES_DIR / "LBP form.docx"
 
 
 class MainWindow(tk.Tk):
@@ -110,7 +111,9 @@ class MainWindow(tk.Tk):
 
         self.job_number_var = tk.StringVar()
         self.client_info_var = tk.StringVar()
-        self.address_var = tk.StringVar()
+        self.street_var = tk.StringVar()
+        self.suburb_var = tk.StringVar()
+        self.town_var = tk.StringVar()
         self.role_var = tk.StringVar()
 
         self.scope_vars: dict[str, dict[str, Any]] = {
@@ -282,18 +285,24 @@ class MainWindow(tk.Tk):
             row=1, column=1, sticky="w", pady=4, padx=8
         )
 
-        ttk.Label(parent, text="Address:").grid(row=2, column=0, sticky="w", pady=4)
-        entry = ttk.Entry(parent, textvariable=self.address_var, width=40)
+        ttk.Label(parent, text="Street:").grid(row=2, column=0, sticky="w", pady=4)
+        entry = ttk.Entry(parent, textvariable=self.street_var, width=40)
         entry.grid(row=2, column=1, sticky="w", pady=4, padx=8)
         entry.bind("<FocusOut>", lambda event: self._update_availability_status())
 
+        ttk.Label(parent, text="Suburb:").grid(row=3, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.suburb_var, width=40).grid(row=3, column=1, sticky="w", pady=4, padx=8)
+
+        ttk.Label(parent, text="Town:").grid(row=4, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.town_var, width=40).grid(row=4, column=1, sticky="w", pady=4, padx=8)
+
         self.availability_label = ttk.Label(parent, textvariable=self.availability_var, wraplength=560, justify="left")
-        self.availability_label.grid(row=3, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        self.availability_label.grid(row=5, column=0, columnspan=3, sticky="w", pady=(0, 8))
         self._update_availability_status()
 
-        ttk.Label(parent, text="Scope:").grid(row=4, column=0, sticky="nw", pady=4)
+        ttk.Label(parent, text="Scope:").grid(row=6, column=0, sticky="nw", pady=4)
         scope_frame = ttk.Frame(parent)
-        scope_frame.grid(row=4, column=1, columnspan=2, sticky="w", pady=4)
+        scope_frame.grid(row=6, column=1, columnspan=2, sticky="w", pady=4)
         self._scope_entries = {}
         for row, item in enumerate(SCOPE_ITEMS):
             selected_var = self.scope_vars[item]["selected"]
@@ -313,9 +322,9 @@ class MainWindow(tk.Tk):
             desc_text.grid(row=row, column=1, sticky="w", padx=8, pady=2)
             self._scope_entries[item] = desc_text
 
-        ttk.Label(parent, text="Role:").grid(row=5, column=0, sticky="w", pady=(12, 4))
+        ttk.Label(parent, text="Role:").grid(row=7, column=0, sticky="w", pady=(12, 4))
         role_frame = ttk.Frame(parent)
-        role_frame.grid(row=5, column=1, columnspan=2, sticky="w", pady=(12, 4))
+        role_frame.grid(row=7, column=1, columnspan=2, sticky="w", pady=(12, 4))
         for col, option in enumerate(ROLE_OPTIONS):
             ttk.Radiobutton(role_frame, text=option, variable=self.role_var, value=option).grid(
                 row=0, column=col, sticky="w", padx=(0, 16)
@@ -345,14 +354,14 @@ class MainWindow(tk.Tk):
             return
 
         job_number = self.job_number_var.get().strip()
-        address = self.address_var.get().strip()
-        if not job_number or not address:
+        street = self.street_var.get().strip()
+        if not job_number or not street:
             self.availability_var.set("")
             return
 
         conflicts = folder_creator.check_availability(
             job_number=job_number,
-            address=address,
+            street=street,
             engineer_drive=self.settings.get("engineer_drive", ""),
             drafting_drive=self.settings.get("drafting_drive", ""),
             admin_drive=self.settings.get("admin_drive", ""),
@@ -361,7 +370,7 @@ class MainWindow(tk.Tk):
             self.availability_label.configure(foreground="red")
             self.availability_var.set("Already exists on:\n" + "\n".join(str(path) for path in conflicts))
         else:
-            project_name = folder_creator.build_project_folder_name(job_number, address)
+            project_name = folder_creator.build_project_folder_name(job_number, street)
             self.availability_label.configure(foreground="green")
             self.availability_var.set(f'Available: "{project_name}"')
 
@@ -373,8 +382,14 @@ class MainWindow(tk.Tk):
         if not self.client_info_var.get().strip():
             messagebox.showerror("Missing info", "Client info is required.")
             return False
-        if not self.address_var.get().strip():
-            messagebox.showerror("Missing info", "Address is required.")
+        if not self.street_var.get().strip():
+            messagebox.showerror("Missing info", "Street is required.")
+            return False
+        if not self.suburb_var.get().strip():
+            messagebox.showerror("Missing info", "Suburb is required.")
+            return False
+        if not self.town_var.get().strip():
+            messagebox.showerror("Missing info", "Town is required.")
             return False
         if not any(self.scope_vars[item]["selected"].get() for item in SCOPE_ITEMS):
             messagebox.showerror("Missing info", "Select at least one Scope item.")
@@ -388,10 +403,10 @@ class MainWindow(tk.Tk):
             return False
 
         job_number = self.job_number_var.get().strip()
-        address = self.address_var.get().strip()
+        street = self.street_var.get().strip()
         conflicts = folder_creator.check_availability(
             job_number=job_number,
-            address=address,
+            street=street,
             engineer_drive=self.settings.get("engineer_drive", ""),
             drafting_drive=self.settings.get("drafting_drive", ""),
             admin_drive=self.settings.get("admin_drive", ""),
@@ -399,9 +414,9 @@ class MainWindow(tk.Tk):
         if conflicts:
             messagebox.showerror(
                 "Folder already exists",
-                "A project folder for this Job number/Address already exists on:\n"
+                "A project folder for this Job number/Street already exists on:\n"
                 + "\n".join(str(path) for path in conflicts)
-                + "\n\nChange the Job number or Address to continue.",
+                + "\n\nChange the Job number or Street to continue.",
             )
             return False
         return True
@@ -736,10 +751,16 @@ class MainWindow(tk.Tk):
         compliance_alt = self.compliance_alt_var.get()
         b1_selected = [option for option in B1_OPTIONS if self.b1_vars[option].get()]
 
+        street = self.street_var.get().strip()
         replacements = {
             "job_number": self.job_number_var.get().strip(),
             "client_info": self.client_info_var.get().strip(),
-            "address": self.address_var.get().strip(),
+            # "address" is the token name baked into the Project register/PS1
+            # templates; it's filled with the street only (see HANDOFF).
+            "address": street,
+            "street": street,
+            "suburb": self.suburb_var.get().strip(),
+            "town": self.town_var.get().strip(),
             "role": self.role_var.get().strip(),
             "council_name": self.council_name_var.get().strip(),
             "description_of_work": self.description_of_work_text.strip(),
@@ -755,13 +776,32 @@ class MainWindow(tk.Tk):
         }
         for item in CM_ITEMS:
             replacements[f"{item.lower()}_box"] = CHECKED if self.cm_vars[item].get() else UNCHECKED
+
+        # LBP form's "restricted building work" table: one row per Scope
+        # item, only filled in for items the user actually checked on the
+        # General step.
+        job_number = replacements["job_number"]
+        role = replacements["role"]
+        for item in SCOPE_ITEMS:
+            key = item.lower()
+            selected = self.scope_vars[item]["selected"].get()
+            replacements[f"lbp_{key}_box"] = CHECKED if selected else UNCHECKED
+            if selected:
+                replacements[f"lbp_{key}_description"] = self.scope_vars[item]["description"].strip()
+                replacements[f"lbp_{key}_carried_by"] = role
+                replacements[f"lbp_{key}_reference"] = f"Engsolution drawings #{job_number}"
+            else:
+                replacements[f"lbp_{key}_description"] = ""
+                replacements[f"lbp_{key}_carried_by"] = ""
+                replacements[f"lbp_{key}_reference"] = ""
+
         return replacements
 
     def _on_create(self) -> None:
         try:
             created = folder_creator.create_project_folders(
                 job_number=self.job_number_var.get(),
-                address=self.address_var.get(),
+                street=self.street_var.get(),
                 engineer_drive=self.settings.get("engineer_drive", ""),
                 drafting_drive=self.settings.get("drafting_drive", ""),
                 admin_drive=self.settings.get("admin_drive", ""),
@@ -781,6 +821,7 @@ class MainWindow(tk.Tk):
         documents = [
             (PROJECT_REGISTER_TEMPLATE, Path("Project register.docx")),
             (PS1_TEMPLATE, Path("06 Consent Document") / "PS1 Producer Statement.docx"),
+            (LBP_TEMPLATE, Path("06 Consent Document") / "LBP form.docx"),
         ]
         for template_path, relative_output in documents:
             if not template_path.exists():
@@ -811,7 +852,9 @@ class MainWindow(tk.Tk):
         """
         self.job_number_var.set("")
         self.client_info_var.set("")
-        self.address_var.set("")
+        self.street_var.set("")
+        self.suburb_var.set("")
+        self.town_var.set("")
         self.role_var.set("")
         for item in SCOPE_ITEMS:
             self.scope_vars[item]["selected"].set(False)

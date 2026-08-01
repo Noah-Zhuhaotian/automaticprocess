@@ -1,10 +1,11 @@
 """Step 1: automatically create the project folder structure across the
 three drives (Engineer, Drafting, Admin).
 
-Naming rule: "{job_number} - {address}", e.g. "1234 - 211 Ferry Rd".
-The same project folder name is used on all three drives. Only the
-Engineer drive gets the fixed set of subfolders; Drafting and Admin only
-get the bare project folder.
+Naming rule: "{job_number} - {street}", e.g. "1234 - 211 Ferry Rd". Only
+the street (not suburb/town) feeds the folder name. The same project
+folder name is used on all three drives. Only the Engineer drive gets
+the fixed set of subfolders; Drafting and Admin only get the bare
+project folder.
 """
 
 from __future__ import annotations
@@ -30,28 +31,28 @@ ENGINEER_SUBFOLDERS = [
 _INVALID_CHARS = re.compile(r'[\\/:*?"<>|]')
 
 
-def build_project_folder_name(job_number: str, address: str) -> str:
+def build_project_folder_name(job_number: str, street: str) -> str:
     job_number = job_number.strip()
-    address = address.strip()
+    street = street.strip()
     if not job_number:
         raise ValueError("Job number is required.")
-    if not address:
-        raise ValueError("Address is required.")
+    if not street:
+        raise ValueError("Street is required.")
 
-    name = f"{job_number} - {address}"
+    name = f"{job_number} - {street}"
     return _INVALID_CHARS.sub("-", name)
 
 
 def _project_targets(
     job_number: str,
-    address: str,
+    street: str,
     engineer_drive: str,
     drafting_drive: str,
     admin_drive: str,
     *,
     require_all_configured: bool,
 ) -> dict[str, Path]:
-    project_name = build_project_folder_name(job_number, address)
+    project_name = build_project_folder_name(job_number, street)
 
     drives = {
         "engineer": engineer_drive,
@@ -72,7 +73,7 @@ def _project_targets(
 
 def check_availability(
     job_number: str,
-    address: str,
+    street: str,
     engineer_drive: str,
     drafting_drive: str,
     admin_drive: str,
@@ -86,14 +87,14 @@ def check_availability(
     already exist (empty means the name is available).
     """
     targets = _project_targets(
-        job_number, address, engineer_drive, drafting_drive, admin_drive, require_all_configured=False
+        job_number, street, engineer_drive, drafting_drive, admin_drive, require_all_configured=False
     )
     return [path for path in targets.values() if path.exists()]
 
 
 def create_project_folders(
     job_number: str,
-    address: str,
+    street: str,
     engineer_drive: str,
     drafting_drive: str,
     admin_drive: str,
@@ -106,7 +107,7 @@ def create_project_folders(
     if a drive path has not been configured yet.
     """
     targets = _project_targets(
-        job_number, address, engineer_drive, drafting_drive, admin_drive, require_all_configured=True
+        job_number, street, engineer_drive, drafting_drive, admin_drive, require_all_configured=True
     )
 
     conflicts = [str(path) for path in targets.values() if path.exists()]
