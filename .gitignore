@@ -15,6 +15,9 @@ dist/
 app/config/user_settings.json
 logs/
 
+# Word lock files (created while a template is open for editing)
+~$*.docx
+
 # IDE
 .vscode/
 .idea/

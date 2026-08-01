@@ -23,6 +23,7 @@ ENGINEER_SUBFOLDERS = [
     "03 Drawings",
     "04 Construction Monitoring",
     "05 Soil",
+    "06 Consent Document",
 ]
 
 # Characters not allowed in Windows file/folder names.
@@ -41,6 +42,55 @@ def build_project_folder_name(job_number: str, address: str) -> str:
     return _INVALID_CHARS.sub("-", name)
 
 
+def _project_targets(
+    job_number: str,
+    address: str,
+    engineer_drive: str,
+    drafting_drive: str,
+    admin_drive: str,
+    *,
+    require_all_configured: bool,
+) -> dict[str, Path]:
+    project_name = build_project_folder_name(job_number, address)
+
+    drives = {
+        "engineer": engineer_drive,
+        "drafting": drafting_drive,
+        "admin": admin_drive,
+    }
+
+    targets: dict[str, Path] = {}
+    for drive_name, drive_root in drives.items():
+        if not drive_root.strip():
+            if require_all_configured:
+                raise ValueError(f"The {drive_name} drive path is not configured yet. Set it in Settings.")
+            continue
+        targets[drive_name] = Path(drive_root) / project_name
+
+    return targets
+
+
+def check_availability(
+    job_number: str,
+    address: str,
+    engineer_drive: str,
+    drafting_drive: str,
+    admin_drive: str,
+) -> list[Path]:
+    """Cheap existence check for the "live" UI status, without creating anything.
+
+    Only checks the exact target path on each configured drive (no
+    directory listing). Drives that aren't configured yet are silently
+    skipped rather than raising, since this is meant to run while the
+    user is still filling in the form. Returns the list of paths that
+    already exist (empty means the name is available).
+    """
+    targets = _project_targets(
+        job_number, address, engineer_drive, drafting_drive, admin_drive, require_all_configured=False
+    )
+    return [path for path in targets.values() if path.exists()]
+
+
 def create_project_folders(
     job_number: str,
     address: str,
@@ -55,19 +105,9 @@ def create_project_folders(
     the project folder already exists on any drive, and raises ValueError
     if a drive path has not been configured yet.
     """
-    project_name = build_project_folder_name(job_number, address)
-
-    drives = {
-        "engineer": engineer_drive,
-        "drafting": drafting_drive,
-        "admin": admin_drive,
-    }
-
-    targets: dict[str, Path] = {}
-    for drive_name, drive_root in drives.items():
-        if not drive_root.strip():
-            raise ValueError(f"The {drive_name} drive path is not configured yet. Set it in Settings.")
-        targets[drive_name] = Path(drive_root) / project_name
+    targets = _project_targets(
+        job_number, address, engineer_drive, drafting_drive, admin_drive, require_all_configured=True
+    )
 
     conflicts = [str(path) for path in targets.values() if path.exists()]
     if conflicts:
