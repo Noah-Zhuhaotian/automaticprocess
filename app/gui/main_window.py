@@ -72,6 +72,12 @@ class MainWindow(tk.Tk):
         self.geometry("760x620")
         self.resizable(True, True)
 
+        style = ttk.Style(self)
+        style.map(
+            "TCheckbutton",
+            foreground=[("disabled", "gray"), ("!selected", "gray"), ("selected", "black")],
+        )
+
         self.settings = load_settings()
         self._init_vars()
 
@@ -380,6 +386,24 @@ class MainWindow(tk.Tk):
         if not self.role_var.get():
             messagebox.showerror("Missing info", "Select a Role.")
             return False
+
+        job_number = self.job_number_var.get().strip()
+        address = self.address_var.get().strip()
+        conflicts = folder_creator.check_availability(
+            job_number=job_number,
+            address=address,
+            engineer_drive=self.settings.get("engineer_drive", ""),
+            drafting_drive=self.settings.get("drafting_drive", ""),
+            admin_drive=self.settings.get("admin_drive", ""),
+        )
+        if conflicts:
+            messagebox.showerror(
+                "Folder already exists",
+                "A project folder for this Job number/Address already exists on:\n"
+                + "\n".join(str(path) for path in conflicts)
+                + "\n\nChange the Job number or Address to continue.",
+            )
+            return False
         return True
 
     # ---------- Step: PS1 Input ----------
@@ -408,6 +432,9 @@ class MainWindow(tk.Tk):
         self._council_combobox.grid(row=0, column=0, sticky="w")
         ttk.Button(council_row, text="Add Council...", command=self._add_council_name).grid(
             row=0, column=1, padx=(8, 0)
+        )
+        ttk.Button(council_row, text="Edit Council...", command=self._edit_council_name).grid(
+            row=0, column=2, padx=(8, 0)
         )
         row += 1
 
@@ -532,6 +559,30 @@ class MainWindow(tk.Tk):
             self._council_combobox.configure(values=council_names, state="readonly")
         if self._council_warning_label is not None and self._council_warning_label.winfo_exists():
             self._council_warning_label.grid_remove()
+
+    def _edit_council_name(self) -> None:
+        council_names = self.settings.get("council_names", [])
+        current = self.council_name_var.get().strip()
+        if not current or current not in council_names:
+            messagebox.showinfo("Edit Council", "Select a council from the list first.")
+            return
+
+        new_name = simpledialog.askstring("Edit Council", "Council name:", initialvalue=current, parent=self)
+        if not new_name or not new_name.strip():
+            return
+        new_name = new_name.strip()
+        if new_name == current:
+            return
+        if new_name in council_names:
+            messagebox.showerror("Edit Council", f'"{new_name}" already exists.')
+            return
+
+        council_names[council_names.index(current)] = new_name
+        save_settings(self.settings)
+
+        self.council_name_var.set(new_name)
+        if self._council_combobox is not None and self._council_combobox.winfo_exists():
+            self._council_combobox.configure(values=council_names)
 
     def _validate_year_input(self, proposed: str) -> bool:
         return proposed == "" or (proposed.isdigit() and len(proposed) <= 4)

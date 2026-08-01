@@ -20,12 +20,22 @@ All code, comments, and UI text must be in **English** (the user
 communicates in Chinese but explicitly asked for an English codebase).
 
 Repo: https://github.com/Noah-Zhuhaotian/automaticprocess.git, branch
-`main`. Latest **pushed** commit is `67c1bed` ("Scaffold project
-structure and implement Step 1"); everything described below (the full
-wizard rebuild, Word template filling, real checkboxes, bullet lists) is
-implemented, tested, and present in the working tree, but as of this
-handoff **has not yet been committed/pushed** — that's the immediate next
-action, not a future task.
+`main`. The full wizard rebuild (Word template filling, real checkboxes,
+bullet lists) was committed and pushed as `4c27d83` ("Rebuild GUI as a
+wizard and implement Word template filling") — that was this handoff's
+previous "commit and push" action item, now done. On top of that, three
+small GUI refinements (folder-conflict blocking, editable council names,
+greyed-out checkboxes — see below) are being committed and pushed as
+part of *this* handoff.
+
+Note: `resources/templates/LBP form.docx` is sitting untracked in the
+working tree (added 2026-07-28, not referenced anywhere in code yet).
+Left out of git deliberately for now — the user's push token wasn't set
+up when it appeared, and it hasn't been asked about since. Don't commit
+it opportunistically; ask first, since it's presumably staged for a
+not-yet-defined feature (LBP = Licensed Building Practitioner, a plausible
+fit for the still-undefined Specification or B2 Letter step, but that's
+a guess, not confirmed).
 
 ## Current Progress
 
@@ -73,9 +83,20 @@ single content frame that gets destroyed/rebuilt per step:
    fill a description if checked, and at least one item must be
    checked), Role (radio, required). Also does a *live* folder-name
    availability check (`folder_creator.check_availability`) on
-   Job-number/Address focus-out, shown in green/red under the fields.
+   Job-number/Address focus-out, shown in green/red under the fields —
+   and, as of this handoff, `_validate_general_step` re-runs that same
+   `check_availability` call and **blocks Next** with an error dialog if
+   it finds a conflict, so the user can no longer click past a
+   already-exists folder name; they have to change Job number or Address
+   first. Previously the red text was purely informational and didn't
+   stop navigation.
 3. **PS1 Input** — Council name (combobox backed by a persisted list in
-   settings + "Add Council..." to grow it live), Description of work,
+   settings + "Add Council..." to grow it live, plus an "Edit Council..."
+   button added this handoff — `_edit_council_name` renames whichever
+   council is currently selected in the combobox via a
+   `simpledialog.askstring` pre-filled with the current name, rejects
+   duplicates, and rewrites it in place in `settings["council_names"]`
+   so its position in the list is preserved), Description of work,
    Legal description, Scope-of-statement (All/Part only radio),
    Construction-monitoring level (CM1–CM5, multi-select checkboxes),
    Basis of statement (Compliance/Alternative radio) which gates: the 3
@@ -207,6 +228,15 @@ validate-then-create so a name collision never leaves a partial mess.
 - **`_reset_for_new_project()` after Create** — user explicitly wanted a
   clean slate for the next project, confirmed drive settings/council list
   must survive the reset (they're config, not project data).
+- **A single global `ttk.Style().map("TCheckbutton", foreground=...)`**
+  (set once in `MainWindow.__init__`) to greys out every checkbox that's
+  either unselected or disabled, and shows normal/black only when
+  checked *and* enabled. One style rule covers Scope, CM, and B1
+  checkboxes at once — no need to touch each `Checkbutton` individually.
+  State-spec order matters: `disabled` must be listed before
+  `!selected` so a disabled-but-checked box still greys out (ttk style
+  maps use first-match-wins). Confirmed visually via screenshot — labels
+  for unchecked items render grey, checked items render black.
 
 ## What Didn't Work / Avoid Repeating
 
@@ -247,37 +277,55 @@ validate-then-create so a name collision never leaves a partial mess.
 - Chinese-first drafts and generic-field-picker GUI designs — both
   already flagged in the original handoff; still true, not repeated
   since.
+- **Blind coordinate-based UI automation to smoke-test the running app**
+  (PowerShell `mouse_event`/`SendKeys` clicking into an Entry by pixel
+  offset, then Ctrl+A/Delete/type/Tab). Used to verify the folder-conflict
+  block; the window closed unexpectedly mid-sequence with no exception
+  logged, and there was no way to be fully sure the keystrokes hadn't
+  landed on a different window (e.g. an editor with the same file open)
+  instead of the intended field — DPI scaling can desync
+  `Cursor.Position` (logical pixels) from `GetWindowRect` (physical
+  pixels), so a click can land somewhere unintended. Had to verify after
+  the fact via `git diff`/line-count that no file got clobbered — it
+  hadn't, but that was luck, not a guarantee. A plain launch-and-screenshot
+  (no simulated typing) worked fine and did confirm the checkbox-greying
+  change. **If asked to verify GUI behavior again, prefer a single
+  no-typing screenshot over simulated multi-field keyboard/mouse input**,
+  or ask the user to click through it themselves.
 
 ## Next Steps
 
-1. **Commit and push the current working tree.** Nothing above has been
-   committed yet — `git status` will show `.gitignore`,
-   `app/config/settings.py`, `app/core/folder_creator.py`,
-   `app/core/word_filler.py`, `app/gui/main_window.py` modified, plus a
-   new `resources/` directory (3 template files — see the project
-   structure above; a stray backup file made during the checkbox
-   migration was already cleaned up, don't recreate it) and this
-   `HANDOFF.md`. This is the immediate task the user asked for, not a
-   "someday" item.
-2. **Specification step** — completely undefined. Need the same
+1. **Manually click through the three refinements above** (folder-conflict
+   block, Edit Council, greyed checkboxes) — they were only verified by
+   code review plus one static screenshot (confirmed the grey/black
+   checkbox contrast), not a full interactive pass, because the attempted
+   automated interaction closed the app unexpectedly (see "What Didn't
+   Work"). Nothing suggests a bug, but this handoff can't claim
+   end-to-end verification the way Steps 1–2 originally got.
+2. **`resources/templates/LBP form.docx`** is untracked in the working
+   tree, deliberately left out of the commit that produced this handoff
+   (see the Repo note above — user's push token wasn't set up yet when
+   it appeared). Ask the user what it's for before adding it to git or
+   wiring it into any step.
+3. **Specification step** — completely undefined. Need the same
    treatment PS1 got: the user will eventually provide a template/mockup;
    ask for the actual file, inspect its XML for any non-obvious
    formatting (checkboxes, bullets, highlights) before assuming plain
    `{{token}}` substitution is enough.
-3. **B2 Letter step** — same as above, undefined.
-4. **Consent Document folder** (`06 Consent Document`) currently only
+4. **B2 Letter step** — same as above, undefined.
+5. **Consent Document folder** (`06 Consent Document`) currently only
    gets the PS1 Producer Statement. The user mentioned other documents
    belong in that folder too, mentioned only in passing early on — worth
    re-confirming what else, if anything, still needs to land there.
-5. **Step 3 (website submission)** — completely unstarted, no URL, no
+6. **Step 3 (website submission)** — completely unstarted, no URL, no
    auth method, no field mapping gathered yet. `web_filler.py` is an
    untouched stub.
-6. **Packaging (PyInstaller)** — still deferred per the user's original
+7. **Packaging (PyInstaller)** — still deferred per the user's original
    preference (get functionality working first). Worth floating again
    now that Steps 1–2 are functionally complete, in case the user wants
    an early build to test on their own machine before Specification/B2
    Letter/Step 3 are done.
-7. No automated tests exist (`tests/` is empty aside from `__init__.py`).
+8. No automated tests exist (`tests/` is empty aside from `__init__.py`).
    Everything so far was verified via ad hoc scripts run through the Bash
    tool, not committed as reusable tests. Consider adding real pytest
    coverage for `folder_creator` and `word_filler` (the run-splicing and
