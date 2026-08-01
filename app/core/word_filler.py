@@ -18,6 +18,7 @@ from typing import Any
 from docx import Document
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import nsdecls, qn
+from docx.table import _Cell
 from docx.text.paragraph import Paragraph
 from docx.text.run import Run
 
@@ -28,7 +29,7 @@ logger = get_logger(__name__)
 # Placeholder syntax used inside template documents, e.g. {{job_number}}.
 PLACEHOLDER_PATTERN = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
-# Tick-box glyphs used for checkbox-style placeholders (see main_window.py).
+# Tick-box glyphs used for checkbox-style placeholders (see app/gui/constants.py).
 UNCHECKED, CHECKED = "☐", "☒"
 CHECKBOX_CHARS = (UNCHECKED, CHECKED)
 
@@ -296,11 +297,69 @@ def _replace_placeholder_with_bullet_list(document: Document, field_name: str, l
     return False
 
 
+# Paragraph style used for the top-level section headings that
+# remove_unselected_sections() cuts the document on (see Specifications.docx
+# and SPECIFICATION_SECTIONS in app/gui/constants.py).
+SECTION_HEADING_STYLE = "Title 1"
+
+
+def _remove_unselected_sections(document: Document, keep_titles: set[str]) -> None:
+    """Delete every top-level section headed by a SECTION_HEADING_STYLE
+    paragraph whose heading text isn't in `keep_titles` - the heading
+    paragraph itself plus every paragraph/table up to (not including) the
+    next such heading. Anything before the first heading (cover page,
+    front matter) and the document's trailing `<w:sectPr>` are always kept.
+
+    Word recalculates that heading style's own auto-numbering from
+    whichever headings survive, so remaining sections don't need manual
+    renumbering here.
+    """
+    body = document.element.body
+    children = list(body)
+
+    sect_pr_index = next((i for i, child in enumerate(children) if child.tag == qn("w:sectPr")), len(children))
+
+    headings: list[tuple[int, str]] = []
+    for idx, child in enumerate(children):
+        if child.tag != qn("w:p"):
+            continue
+        paragraph = Paragraph(child, document)
+        if paragraph.style is not None and paragraph.style.name == SECTION_HEADING_STYLE:
+            headings.append((idx, paragraph.text.strip()))
+
+    for i, (start_idx, title) in enumerate(headings):
+        if title in keep_titles:
+            continue
+        end_idx = headings[i + 1][0] if i + 1 < len(headings) else sect_pr_index
+        for child in children[start_idx:end_idx]:
+            child.getparent().remove(child)
+
+
+def _remove_unselected_table_rows(
+    document: Document, table_index: int, keep_row_labels: set[str], header_rows: int = 1
+) -> None:
+    """Delete every data row (after the first `header_rows` rows) of
+    `document.tables[table_index]` whose first-cell text isn't in
+    `keep_row_labels` - e.g. the Material/Means of Compliance/Notes table
+    in B2 Letter.docx, where the user picks which material rows apply.
+    Row content itself is never touched, only whether the row survives.
+    """
+    table = document.tables[table_index]
+    trs = table._tbl.findall(qn("w:tr"))
+    for tr in trs[header_rows:]:
+        tc = tr.find(qn("w:tc"))
+        label = _Cell(tc, table).text.strip()
+        if label not in keep_row_labels:
+            tr.getparent().remove(tr)
+
+
 def fill_docx_template(
     template_path: str,
     output_path: str,
     replacements: dict[str, Any],
     bullet_lists: dict[str, list[str]] | None = None,
+    keep_sections: set[str] | None = None,
+    keep_table_rows: dict[int, set[str]] | None = None,
 ) -> Path:
     """Copy template_path to output_path and replace {{placeholder}} tokens.
 
@@ -309,6 +368,14 @@ def fill_docx_template(
     bullet_lists keys work the same way, but each maps to a list of lines
     that become a genuine Word bulleted list (one paragraph per line) in
     place of the placeholder, instead of a plain-text substitution.
+    keep_sections, if given, deletes every SECTION_HEADING_STYLE-headed
+    section whose heading text isn't in the set (see
+    _remove_unselected_sections) before any token replacement runs, so
+    tokens that only exist inside a removed section never need a value.
+    keep_table_rows, if given, maps a table index to the set of first-cell
+    labels whose rows should survive in that table (see
+    _remove_unselected_table_rows) - applied the same "before replacement"
+    way as keep_sections.
     Raises FileNotFoundError if the template is missing, and
     FileExistsError if output_path already exists (never overwrites).
     """
@@ -325,6 +392,13 @@ def fill_docx_template(
     str_replacements = {key: "" if value is None else str(value) for key, value in replacements.items()}
 
     document = Document(output)
+
+    if keep_sections is not None:
+        _remove_unselected_sections(document, keep_sections)
+
+    for table_index, keep_row_labels in (keep_table_rows or {}).items():
+        _remove_unselected_table_rows(document, table_index, keep_row_labels)
+
     skip_warning_keys = frozenset((bullet_lists or {}).keys())
 
     for paragraph in _iter_all_paragraphs(document):
