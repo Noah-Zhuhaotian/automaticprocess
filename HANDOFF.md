@@ -25,9 +25,27 @@ Repo: https://github.com/Noah-Zhuhaotian/automaticprocess.git, branch
 template filling, real checkboxes, bullet lists), `7174142` (three GUI
 refinements: folder-conflict blocking, editable council names,
 greyed-out checkboxes), `c149832` (Address split into
-Street/Suburb/Town; LBP form wired up as a third generated document).
-*This* handoff bundles everything built on top of `c149832` and is being
+Street/Suburb/Town; LBP form wired up as a third generated document),
+`4814414` (Waivers/Specification/B2 Letter steps implemented,
+Calculation Statement wired up, `main_window.py` split into
+`constants.py` + `steps/`). *This* handoff is two small fixes found by
+the user actually testing the app after `4814414` and is being
 committed/pushed now:
+
+1. **The Create-success popup now shows a green ✔** instead of the OS
+   "info" icon (see "Success dialog" below) - `messagebox` only supports
+   its fixed icon set, so this needed a small custom `Toplevel`, with a
+   fallback to the plain `messagebox.showinfo` if it ever fails to build.
+2. **Fixed stale step numbering after a first-run Settings step.**
+   `self.steps` was only computed once at `__init__`; completing Settings
+   (which only appears when drives aren't configured yet) and saving the
+   drive paths didn't refresh it, so for the rest of that session General
+   kept showing as "2 of 7" instead of "1 of 6" even though the drives
+   were now configured - `_reset_for_new_project()` now rebuilds
+   `self.steps` before jumping back to General. See "What Didn't Work"
+   for why this one's easy to miss in code review.
+
+`4814414`'s own changes (historical record, already pushed):
 
 1. A dedicated **Waivers and Modifications** wizard step for the LBP
    form's YES/NO waiver section.
@@ -224,12 +242,30 @@ layout" above:
    `word_filler.fill_docx_template` for each of the **six** templates
    (Project register, PS1, LBP form, Calculation Statement,
    Specifications, B2 Letter — skipped individually if its template file
-   is missing), then shows a summary `messagebox`, then calls
-   `_reset_for_new_project()` which blanks every *project* field (job
-   number, street/suburb/town, scope, PS1 fields, waivers fields,
-   Specification/B2 Letter selections, date, etc.) and jumps back to the
-   General step — but leaves drive settings and the saved council list
-   alone, since those are machine config, not project data.
+   is missing), then shows a success dialog (see "Success dialog"
+   below), then calls `_reset_for_new_project()` which blanks every
+   *project* field (job number, street/suburb/town, scope, PS1 fields,
+   waivers fields, Specification/B2 Letter selections, date, etc.),
+   **rebuilds `self.steps`** (this handoff - see the Repo note above;
+   picks up Settings dropping out of the list if it was just completed
+   this session), and jumps back to the General step — but leaves drive
+   settings and the saved council list alone, since those are machine
+   config, not project data.
+
+### Success dialog ([app/gui/steps/review_step.py](app/gui/steps/review_step.py))
+
+`_show_success_dialog(title, message)` replaces the plain
+`messagebox.showinfo` call after a successful Create - the user wanted a
+green ✔ instead of the OS "info" icon, and `tkinter.messagebox` only
+offers its fixed icon set (`"info"`/`"warning"`/`"error"`/`"question"`),
+no way to swap in an arbitrary glyph. It's a small `tk.Toplevel` built to
+behave like a real messagebox: `transient` + `grab_set()` +
+`self.wait_window(dialog)` for the same modal, blocks-the-caller
+behavior, a `✔` `ttk.Label` (Segoe UI 28pt, `#107C10` green) where the
+icon would be, the message text next to it, an OK button that closes it
+(bound to Enter too). The whole thing is wrapped in a `try`/`except` that
+falls back to plain `messagebox.showinfo` on any failure, per the user's
+explicit "if it can't be built, just use the original icon" ask.
 
 ### Word filling ([app/core/word_filler.py](app/core/word_filler.py))
 
@@ -492,6 +528,24 @@ partial mess.
   `git log --all -- <path>` before agreeing it was safe to delete, so
   the reasoning was "recoverable from git if ever needed again," not
   "probably fine."
+- **The user's own testing pass caught a real bug the headless scripts
+  never would have.** Every headless `MainWindow()` test this handoff
+  and last constructed the app *already* pointing at configured test
+  drives, so `self.steps` was always the 6-step list from the start -
+  the stale-step-list bug (see "What Didn't Work") only exists on a
+  genuine first run (drives unconfigured at `__init__`, then configured
+  *during* that same session). No amount of headless testing that
+  conveniently pre-configures drives would have found this; it needed
+  someone testing the actual first-run path end to end. Worth remembering
+  when a test setup "conveniently" skips a state a real user starts in.
+- **Testing the exact reported scenario, not just the fix in isolation.**
+  Reproduced the stale-step-list bug by clearing drive settings *before*
+  constructing `MainWindow` (same as a real first run), walking Settings
+  for real, then the rest of the wizard, then asserting the post-Create
+  step count/index - rather than just confirming `_build_step_list()`
+  returns 6 items when called standalone (which wouldn't prove
+  `_reset_for_new_project` was calling it, or that the numbers shown to
+  the user were actually right).
 
 ## What Didn't Work / Avoid Repeating
 
@@ -547,27 +601,41 @@ partial mess.
   change. **If asked to verify GUI behavior again, prefer a single
   no-typing screenshot over simulated multi-field keyboard/mouse input**,
   or ask the user to click through it themselves.
+- **Computing `self.steps` once at `__init__` and never revisiting that
+  assumption.** It's derived from `_drives_configured()`, which can
+  become true *during* a running session (first-run user fills in
+  Settings, saves it) - but nothing re-ran `_build_step_list()`
+  afterward, so the step list silently stayed stale (Settings still
+  present, General showing "2 of 7") for the rest of that session even
+  though a fresh restart would correctly show "1 of 6". This survived
+  code review and every earlier headless test because none of them
+  exercised a real first run (all pre-configured drives before
+  constructing `MainWindow`) - only surfaced when the user actually
+  tested the literal first-run path (see "What Worked"). Fixed by
+  rebuilding `self.steps` in `_reset_for_new_project()`. **Any state
+  computed once from settings/config that can change mid-session should
+  be recomputed at the point it's read, not cached at construction time**
+  - or at minimum, explicitly re-derived at the one point (here, the
+  post-Create reset) where the app returns to a "clean slate" a user
+  would expect to match a fresh launch.
 
 ## Next Steps
 
-1. **Manually click through the app end-to-end at least once, in a real
-   window.** Every feature since the original PS1/Project register work
-   (folder-conflict block, Edit Council, greyed checkboxes,
-   Street/Suburb/Town split, LBP form + its two checkbox/table
-   migrations, Waivers and Modifications, Specification, the module
-   split, B2 Letter) has been verified by code review, a couple of
-   static screenshots, and increasingly-thorough headless scripts - most
-   recently a full `MainWindow()` walkthrough that drives every step's
-   real build/validate methods and calls the real `_on_create()` (see
-   "What Worked") - but never by a human actually clicking through the
-   live GUI. Nothing found suggests a bug, but no one has confirmed the
-   real visual layout (label wrapping, the Specification/B2 Letter
-   checkbox lists, radio/entry enable-disable *feel*) or opened the
-   generated `.docx` files in Word to eyeball checkboxes/tables/section
-   removal rendering correctly. An earlier attempt at simulating
-   clicks/keystrokes to do this closed the app unexpectedly (see "What
-   Didn't Work") - if attempting this again, prefer asking the user to
-   click through it themselves over more coordinate-based automation.
+1. **Keep having the user click through the app in a real window -
+   it already found one real bug headless testing structurally could
+   not have caught.** The user testing "starting from File path" (a
+   genuine first run) surfaced the stale-`self.steps` bug fixed this
+   handoff; every headless script up to that point happened to
+   pre-configure drives before constructing `MainWindow`, so the
+   first-run path itself was never actually exercised (see "What Worked"
+   / "What Didn't Work"). Still nobody has confirmed the real *visual*
+   layout (label wrapping, the Specification/B2 Letter checkbox lists,
+   the new ✔ success dialog's look, radio/entry enable-disable *feel*)
+   or opened the generated `.docx` files in Word to eyeball
+   checkboxes/tables/section removal rendering correctly. An earlier
+   attempt at simulating clicks/keystrokes to do this closed the app
+   unexpectedly (see "What Didn't Work") - keep preferring the user's
+   own click-through over more coordinate-based automation.
 2. **Consent Document folder** (`06 Consent Document`) now gets PS1, LBP
    form, Calculation Statement, Specifications, and B2 Letter - probably
    everything the user meant by "other documents belong there too" when

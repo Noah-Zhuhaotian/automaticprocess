@@ -15,9 +15,10 @@ wizard collects a project's info once, then a single **Create** click:
 3. *(planned)* Submits the same data to the office's timesheet/project
    website
 
-After a successful Create, the wizard resets itself and jumps back to
-General, ready for the next project. Drive paths and the saved council
-list are app configuration and are never cleared by this reset.
+After a successful Create, a green ✔ success dialog confirms it, then
+the wizard resets itself and jumps back to General, ready for the next
+project. Drive paths and the saved council list are app configuration
+and are never cleared by this reset.
 
 ## Wizard steps
 

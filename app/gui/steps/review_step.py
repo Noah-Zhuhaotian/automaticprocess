@@ -201,8 +201,44 @@ class ReviewStepMixin:
 
         self.create_result_var.set(f"Created:\n{summary}")
         self._update_availability_status()
-        messagebox.showinfo("Done", "Project created successfully.")
+        self._show_success_dialog("Done", "Project created successfully.")
         self._reset_for_new_project()
+
+    def _show_success_dialog(self, title: str, message: str) -> None:
+        """Same modal, blocks-until-closed behavior as messagebox.showinfo,
+        but with a green checkmark instead of the OS "info" icon -
+        tkinter's messagebox only supports its fixed icon set ("info"/
+        "warning"/"error"/"question"), so a custom Toplevel is the only
+        way to get a checkmark in there. Falls back to the plain
+        messagebox (its default icon) if building the custom dialog fails
+        for any reason.
+        """
+        try:
+            dialog = tk.Toplevel(self)
+            dialog.title(title)
+            dialog.resizable(False, False)
+            dialog.transient(self)
+            dialog.grab_set()
+
+            frame = ttk.Frame(dialog, padding=20)
+            frame.pack(fill="both", expand=True)
+
+            ttk.Label(frame, text="✔", font=("Segoe UI", 28), foreground="#107C10").grid(
+                row=0, column=0, padx=(0, 16), sticky="n"
+            )
+            ttk.Label(frame, text=message, wraplength=360, justify="left").grid(row=0, column=1, sticky="w")
+
+            ok_button = ttk.Button(frame, text="OK", command=dialog.destroy)
+            ok_button.grid(row=1, column=0, columnspan=2, pady=(16, 0))
+            ok_button.focus_set()
+
+            dialog.bind("<Return>", lambda event: dialog.destroy())
+            dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+
+            self.wait_window(dialog)
+        except Exception:  # noqa: BLE001
+            logger.exception("Custom success dialog failed, falling back to the default messagebox icon")
+            messagebox.showinfo(title, message)
 
     def _reset_for_new_project(self) -> None:
         """Clear all per-project input and jump back to General, ready for
@@ -250,6 +286,13 @@ class ReviewStepMixin:
         for material in B2_LETTER_MATERIALS:
             self.b2_letter_material_vars[material].set(False)
 
+        # Rebuild the step list: if this was the first run, Settings just
+        # got filled in and saved during this very session, but self.steps
+        # was only computed once at startup and still includes it. Without
+        # this, General would keep showing as "2 of 7" (with Settings) for
+        # the rest of the session instead of "1 of 6" like a fresh restart
+        # (where _drives_configured() is already true) would show.
+        self.steps = self._build_step_list()
         general_index = next(i for i, s in enumerate(self.steps) if s["title"] == "General")
         self.current_step = general_index
         self._show_step(general_index)
