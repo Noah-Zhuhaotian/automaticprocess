@@ -28,9 +28,69 @@ greyed-out checkboxes), `c149832` (Address split into
 Street/Suburb/Town; LBP form wired up as a third generated document),
 `4814414` (Waivers/Specification/B2 Letter steps implemented,
 Calculation Statement wired up, `main_window.py` split into
-`constants.py` + `steps/`). *This* handoff is two small fixes found by
-the user actually testing the app after `4814414` and is being
-committed/pushed now:
+`constants.py` + `steps/`), `67ce123` (green-✔ success dialog; fixed
+stale step numbering after a first-run Settings step - both found by
+the user testing the app). *This* handoff is **not yet committed** -
+`app/core/word_filler.py`, `app/gui/constants.py`,
+`app/gui/steps/general_step.py`, `app/gui/steps/ps1_step.py`,
+`app/gui/steps/review_step.py`, and both
+`resources/templates/PS1 Producer Statement.docx` and
+`resources/templates/LBP form.docx` are modified in the working tree:
+
+1. **Compliance and Alternative on PS1 Input are now independent
+   checkboxes, not a mutually-exclusive radio pair.** The user can tick
+   both at once (a PS1 can genuinely rely on both at the same time). See
+   "PS1 Input" and "Word filling" below for exactly what changed.
+2. **New "Site verification" free-text field on PS1 Input**, feeding a
+   `{{site_verfication}}` token already present in the PS1 template (typo
+   spelling kept, same convention as the pre-existing `legel_description`
+   token). Not required, synced/reset the same way as Description of
+   work/Legal description.
+3. **LBP form's per-item description cells are now genuine Word bulleted
+   lists, one bullet per line the user types** (Enter-separated) in that
+   Scope item's existing description box on the General step - no new UI,
+   the user just presses Enter between points. `{{scope}}` (the PS1/
+   Project register summary list) now flattens every selected item's
+   individual lines into one combined bullet list, matching exactly what
+   appears split across the LBP cells, instead of one merged line per
+   item. See "Word filling" for the mechanism and constants.py/
+   general_step.py/review_step.py for what changed.
+4. **PS1's `{{scope}}` bullets now carry the same grey shading
+   (`F2F2F2`/background1/shade F2) as LBP form's description cells,
+   growing/shrinking with however many bullets exist.** Previously the
+   grey "shading" behind `{{scope}}` in the PS1 template wasn't real
+   paragraph/cell shading at all - it was a fixed-size decorative
+   rectangle shape floating *behind* the text (`behindDoc="1"`,
+   `<a:noAutofit/>`), completely disconnected from the text's actual
+   height, so it never grew when more bullets were added. Fixed by a
+   one-off template migration (removed the decorative shape, added real
+   `w:shd` to the `{{scope}}` paragraph's `w:pPr`) plus a small
+   `word_filler.py` change so `_insert_bullet_paragraph_after` now
+   propagates a placeholder paragraph's own `w:shd` onto every bullet
+   paragraph it generates - the same "reuse the placeholder's own
+   formatting" idea already used for `rPr`/font, just extended to
+   shading. Verified against the real template: N bullets → N shaded
+   paragraphs. Project register.docx's own `{{scope}}` never had any
+   shading to begin with (confirmed by inspection) - left untouched.
+5. **Unexplained but accepted: `resources/templates/LBP form.docx` picked
+   up 8 blank paragraphs before "WAIVERS AND MODIFICATIONS"**, most likely
+   from Word auto-save while the user had it open on-screen during this
+   session (table content/tokens/checkboxes all confirmed byte-identical
+   to the last commit - only body paragraph whitespace changed). Not
+   caused by any script or code change this handoff. The user was asked
+   and explicitly chose to leave it as-is rather than reverting.
+6. **"WAIVERS AND MODIFICATIONS" now always starts on a new page in LBP
+   form.docx**, regardless of how much (or little) content precedes it -
+   the user noticed short content above it let the heading "ride up" onto
+   the same page. Fixed with python-docx's own `paragraph.paragraph_format
+   .page_break_before = True` on that heading paragraph (a real Word
+   "page break before" paragraph property, not a manually inserted page
+   break character) - a one-line template edit, no `word_filler.py`
+   change needed. Verified the property survives a full
+   `fill_docx_template` pass and that every table's content/tokens are
+   still byte-identical to before this edit.
+
+`67ce123`'s own changes (historical record, already pushed):
 
 1. **The Create-success popup now shows a green ✔** instead of the OS
    "info" icon (see "Success dialog" below) - `messagebox` only supports
@@ -197,10 +257,17 @@ layout" above:
    so its position in the list is preserved), Description of work,
    Legal description, Scope-of-statement (All/Part only radio),
    Construction-monitoring level (CM1–CM5, multi-select checkboxes),
-   Basis of statement (Compliance/Alternative radio) which gates: the 3
-   B1 compliance-method checkboxes (enabled only under Compliance) and
-   the Alternative-solution text box (auto-filled "N/A" and locked under
-   Compliance; free-text and required under Alternative). Date is a
+   Basis of statement (Compliance and Alternative — **independent
+   checkboxes as of this handoff, not a mutually-exclusive radio**;
+   `self.compliance_var`/`self.alternative_var`, both `tk.BooleanVar`;
+   both may be ticked at once) which gate: the 3 B1 compliance-method
+   checkboxes (enabled only while Compliance is ticked, cleared the
+   moment it's unticked) and the Alternative-solution text box
+   (auto-filled "N/A" and locked while Alternative is unticked; free-text
+   and required while it's ticked) — each gate now keys off its own
+   checkbox independently, so e.g. Compliance being unticked no longer
+   implicitly forces Alternative's state. At least one of the two must be
+   ticked to pass validation. Date is a
    Year/Month/Day trio, not a free-text field — Year must be a valid
    4-digit number before Month unlocks, Month before Day unlocks (day
    count is `calendar.monthrange`-correct, i.e. leap years included), and
@@ -320,17 +387,69 @@ content-editing mechanisms, in this order:
    placeholder's original paragraph), and **reuses the placeholder
    token's own `<w:rPr>`** (deep-copied) so the bullets match whatever
    font/size/bold the template author set on `{{scope}}` itself, rather
-   than falling back to a generic default.
+   than falling back to a generic default. **This handoff:** it also
+   reuses the placeholder's own `<w:pPr>/<w:shd>` (paragraph shading) the
+   same way, deep-copied onto every generated bullet paragraph before the
+   placeholder's own paragraph is removed - so if a bulleted placeholder's
+   paragraph has shading, every line of the resulting list gets shaded
+   too, growing/shrinking automatically with however many bullets there
+   are (see "PS1's `{{scope}}` shading" below for why this was needed).
+   Placeholders with no shading (most of them) are unaffected -
+   `template_shd` is simply `None` and nothing gets added.
 
-Caller-side contract ([app/gui/main_window.py](app/gui/main_window.py)):
+Caller-side contract ([app/gui/steps/review_step.py](app/gui/steps/review_step.py)):
 `_build_replacements()` returns the plain-text + checkbox dict;
 `_build_scope_lines()` returns the plain description strings (no manual
 `"- "` prefix — the bullet glyph is a real list marker now) passed
-separately as `bullet_lists={"scope": [...]}`. All three templates get
-the *same* `bullet_lists["scope"]` (harmless no-op for LBP, which has no
-`{{scope}}` token) — no special-casing needed between them now that it's
-real paragraphs, unlike an earlier plain-text version that needed a
-manually-injected leading `"\n"` for one template but not the other.
+separately as `bullet_lists={"scope": [...]}`. **This handoff:** LBP's
+per-item description cells (`lbp_{key}_description`) also go through
+`bullet_lists` now instead of plain `replacements` - see "LBP form's
+'restricted building work' table" below for why unselected items still
+have to go through plain `replacements` instead (an empty bullet list
+would delete the cell's only paragraph and corrupt the table). All
+documents get the *same* `bullet_lists` dict — harmless no-op wherever a
+given key's placeholder doesn't exist in that template — no
+special-casing needed between them now that it's real paragraphs, unlike
+an earlier plain-text version that needed a manually-injected leading
+`"\n"` for one template but not the other.
+
+**PS1's `{{scope}}` shading now matches LBP's cell shading (this
+handoff):** previously the grey background behind `{{scope}}` in the PS1
+template *looked* like shading but wasn't - it was a fixed-size
+decorative rectangle shape floating **behind** the text
+(`behindDoc="1"`, wrapped in `<mc:AlternateContent>` with a
+`<wp:anchor>`/`<a:noAutofit/>` DrawingML shape, `bg2` theme fill),
+positioned near the paragraph but completely disconnected from its actual
+height - so it never grew or shrank as the number of scope bullets
+changed. Confirmed by inspecting the raw XML (found via `body.iter(qn(
+"wp:anchor"))`, since it's nested inside AlternateContent rather than a
+plain `<w:drawing>`, so a naive direct-child search misses it). Fixed
+with a one-off migration script (same two-phase copy-verify-then-real-file
+workflow as every other template surgery in this project) that removed
+the decorative shape entirely and added real `<w:shd w:fill="F2F2F2"
+w:themeFill="background1" w:themeFillShade="F2"/>` (LBP's exact shading
+color) to the `{{scope}}` paragraph's `<w:pPr>` — combined with the
+`word_filler.py` change above (propagating `w:shd` onto generated bullet
+paragraphs), a real PS1 document now shows every scope bullet shaded,
+however many there are. Project register.docx's own `{{scope}}` was
+checked too and never had any shading or decorative shape to begin with -
+left untouched.
+
+**PS1's `compliance_box`/`alternative_box` are independently driven now
+(this handoff):** no change to `word_filler.py` itself - these were
+already two separate tagged checkbox controls in the PS1 template (see
+mechanism 2 above), and `_apply_checkbox_controls` already toggles each
+by tag independently. The only change is what `_build_replacements()`
+feeds them: `"compliance_box": CHECKED if self.compliance_var.get() else
+UNCHECKED` and `"alternative_box": CHECKED if
+self.alternative_var.get() else UNCHECKED` (previously both derived from
+one shared `compliance_alt_var` radio value, so only one could ever be
+`CHECKED`). Confirmed end-to-end: ticking both in the GUI and generating
+a real PS1 document leaves *both* real Word checkboxes checked
+(`w14:checked="1"`) - not just the token dict, the actual `.docx` output.
+`compliance_solution`/`alternative_solution` similarly now key off their
+own checkbox (`self.compliance_var.get()`/`self.alternative_var.get()`)
+instead of a shared value.
 
 **Address → Street/Suburb/Town split (previous handoff, `c149832`):** the General step's
 single "Address" field is now three fields. The project folder name and
@@ -370,6 +489,26 @@ Scope description text, the Role value ("Carried out"/"Supervised" — the
 exact string already used for `ROLE_OPTIONS`, no mapping needed) in
 Carried-out, and `f"Engsolution drawings #{job_number}"` in Reference;
 unchecked → all three left as `""`.
+
+**This handoff: `lbp_{key}_description` is now a genuine bulleted list,
+not a plain-text blob.** Each Scope item's description box (General step)
+is still one `tk.Text`, but now every Enter-separated line the user types
+becomes its own bullet point in that item's LBP table cell - no new UI, no
+"how many bullets" count field, the user was told to just press Enter
+between points. New helper `_scope_description_lines()`
+([general_step.py](app/gui/steps/general_step.py)) splits that text into
+non-empty stripped lines; `review_step.py`'s new
+`_build_lbp_description_bullets()` returns
+`{f"lbp_{key}_description": lines}` for every *selected* item, merged into
+the shared `bullet_lists` dict passed to `fill_docx_template` (see "Word
+filling"). Deliberately **not selected** items still go through the plain
+`replacements` dict (`lbp_{key}_description = ""`) instead of an empty
+bullet list - `_replace_placeholder_with_bullet_list` deletes the
+placeholder's paragraph entirely once its runs are empty, and a table cell
+must always retain at least one `<w:p>` or the `.docx` breaks. `{{scope}}`
+(`_build_scope_lines()`) now flattens every selected item's lines into one
+combined list instead of one merged-with-`"; "` line per item, so it shows
+the exact same bullets that appear split across the LBP cells.
 
 **LBP form's "Waivers and Modifications" section (this handoff):** table
 2 has a YES/NO checkbox pair in row 0 (`<w:sdt>` elements as direct
@@ -546,6 +685,38 @@ partial mess.
   returns 6 items when called standalone (which wouldn't prove
   `_reset_for_new_project` was calling it, or that the numbers shown to
   the user were actually right).
+- **Verifying a checkbox-independence change against the real `.docx`
+  output, not just the token dict.** For the Compliance/Alternative
+  split, `_build_replacements()` returning `{"compliance_box": "☒",
+  "alternative_box": "☒"}` when both are ticked is necessary but not
+  sufficient - it doesn't prove `_apply_checkbox_controls` actually
+  toggles two *independently tagged* `<w:sdt>` controls rather than, say,
+  one control silently controlling both (a real risk if the template
+  ever shared a tag). Generated a real PS1 document with both ticked and
+  read back `w14:checked` for both tags directly from the saved `.docx`
+  XML to confirm. Four widget-state/token-dict cases (neither / both /
+  Compliance-only / Alternative-only) were also covered headlessly before
+  this - the full-document check was the one that couldn't be skipped
+  for a checkbox behavior change specifically.
+- **When the user says something "doesn't look right" about template
+  formatting, re-inspect the actual XML rather than trusting the first
+  plausible explanation.** First guess for the PS1 `{{scope}}` shading
+  question was "it's cell/paragraph shading like LBP's, just needs
+  copying" - checking the raw XML showed there was *no* shading at all on
+  that paragraph, and the grey box the user saw was an unrelated floating
+  decorative shape. Asking the user for a screenshot at that point (rather
+  than guessing further) was what surfaced the real shape, which a second
+  round of raw-XML inspection then explained precisely (`behindDoc="1"`,
+  `<a:noAutofit/>`, wrapped in `<mc:AlternateContent>` so a naive
+  `w:drawing` direct-child search misses it - had to search for
+  `wp:anchor` via `.iter()` instead and walk up to the enclosing `<w:r>`).
+- **A prior session's "reuse the placeholder's own formatting" pattern
+  (font `rPr` for bullets) generalized cleanly to shading (`w:shd`)
+  without needing a new mechanism** - just capture it alongside `rPr`
+  before the placeholder paragraph is removed, and copy it onto every
+  generated bullet paragraph the same way. Confirmed end-to-end against a
+  real filled document (N bullets → N shaded paragraphs), not just by
+  inspecting the template after migration.
 
 ## What Didn't Work / Avoid Repeating
 
@@ -618,6 +789,23 @@ partial mess.
   - or at minimum, explicitly re-derived at the one point (here, the
   post-Create reset) where the app returns to a "clean slate" a user
   would expect to match a fresh launch.
+- **Templates open in Word block migration scripts from saving
+  (`PermissionError: [Errno 13]`)** - the user had PS1 Producer
+  Statement.docx open while looking at it for a screenshot, and the
+  one-off shading migration script couldn't write to it until they closed
+  it. Unremarkable on its own, but worth remembering that template
+  surgery on a file the user is actively inspecting needs "please close
+  it first," not a silent retry loop.
+- **`resources/templates/LBP form.docx` picked up 8 blank paragraphs from
+  something outside this session's own changes** (Word autosave while the
+  user had it open, going by timing - not any script run here). Caught by
+  `git status` showing it modified when no code had touched it, then
+  confirmed via a HEAD-vs-working-tree text diff that tables/tokens/
+  checkboxes were untouched and only body whitespace changed. **`git
+  status` after any batch of "read-only" template inspection is worth a
+  glance** - reading a `.docx` with python-docx never writes it, but the
+  user's own Word session editing the same file concurrently can, and it
+  won't show up as something *you* did unless you check.
 
 ## Next Steps
 

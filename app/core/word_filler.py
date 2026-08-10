@@ -242,7 +242,9 @@ def _ensure_bullet_numbering(document: Document) -> int:
     return new_num_id
 
 
-def _insert_bullet_paragraph_after(anchor_element, parent, text: str, num_id: int, rPr_template=None):
+def _insert_bullet_paragraph_after(
+    anchor_element, parent, text: str, num_id: int, rPr_template=None, shd_template=None
+):
     new_p = OxmlElement("w:p")
     anchor_element.addnext(new_p)
     new_paragraph = Paragraph(new_p, parent)
@@ -253,6 +255,12 @@ def _insert_bullet_paragraph_after(anchor_element, parent, text: str, num_id: in
     numPr = new_paragraph._p.get_or_add_pPr().get_or_add_numPr()
     numPr.get_or_add_ilvl().val = 0
     numPr.get_or_add_numId().val = num_id
+    if shd_template is not None:
+        # w:shd follows w:numPr in the CT_PPrBase schema order - each
+        # bullet paragraph gets its own shading, so a shaded block covers
+        # exactly as many lines as there are bullets, growing/shrinking
+        # with the list instead of a fixed-size decorative shape would.
+        numPr.addnext(deepcopy(shd_template))
     return new_p
 
 
@@ -281,13 +289,16 @@ def _replace_placeholder_with_bullet_list(document: Document, field_name: str, l
         num_id = _ensure_bullet_numbering(document)
         template_rPr_el = runs[start_idx]._element.find(qn("w:rPr"))
         template_rPr = deepcopy(template_rPr_el) if template_rPr_el is not None else None
+        pPr_el = paragraph._p.find(qn("w:pPr"))
+        template_shd_el = pPr_el.find(qn("w:shd")) if pPr_el is not None else None
+        template_shd = deepcopy(template_shd_el) if template_shd_el is not None else None
 
         for run in runs[start_idx:end_idx]:
             run._element.getparent().remove(run._element)
 
         anchor = paragraph._p
         for line in lines:
-            anchor = _insert_bullet_paragraph_after(anchor, paragraph._parent, line, num_id, template_rPr)
+            anchor = _insert_bullet_paragraph_after(anchor, paragraph._parent, line, num_id, template_rPr, template_shd)
 
         if not paragraph.runs:
             paragraph._p.getparent().remove(paragraph._p)

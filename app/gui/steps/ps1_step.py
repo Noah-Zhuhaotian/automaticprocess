@@ -15,7 +15,6 @@ from app.gui.constants import (
     ALL_PART_OPTIONS,
     B1_OPTIONS,
     CM_ITEMS,
-    COMPLIANCE_ALT_OPTIONS,
     LABEL_WIDTH,
     MONTH_NAMES,
 )
@@ -33,9 +32,11 @@ class Ps1StepMixin:
         self.council_name_var = tk.StringVar()
         self.description_of_work_text = ""
         self.legal_description_text = ""
+        self.site_verification_text = ""
         self.all_part_var = tk.StringVar()
         self.cm_vars: dict[str, tk.BooleanVar] = {item: tk.BooleanVar(value=False) for item in CM_ITEMS}
-        self.compliance_alt_var = tk.StringVar()
+        self.compliance_var = tk.BooleanVar(value=False)
+        self.alternative_var = tk.BooleanVar(value=False)
         self.b1_vars: dict[str, tk.BooleanVar] = {item: tk.BooleanVar(value=False) for item in B1_OPTIONS}
         self.alternative_solution_text = ""
         self.date_year_var = tk.StringVar()
@@ -48,6 +49,7 @@ class Ps1StepMixin:
         self._alternative_solution_widget: tk.Text | None = None
         self._description_of_work_widget: tk.Text | None = None
         self._legal_description_widget: tk.Text | None = None
+        self._site_verification_widget: tk.Text | None = None
         self._council_combobox: ttk.Combobox | None = None
         self._council_warning_label: ttk.Label | None = None
 
@@ -105,6 +107,12 @@ class Ps1StepMixin:
         self._legal_description_widget.insert("1.0", self.legal_description_text)
         row += 1
 
+        ttk.Label(frame, text="Site verification:", width=LABEL_WIDTH).grid(row=row, column=0, sticky="nw", pady=4)
+        self._site_verification_widget = tk.Text(frame, width=42, height=3, wrap="word")
+        self._site_verification_widget.grid(row=row, column=1, columnspan=2, sticky="we", pady=4, padx=8)
+        self._site_verification_widget.insert("1.0", self.site_verification_text)
+        row += 1
+
         ttk.Label(frame, text="Scope of statement:", width=LABEL_WIDTH).grid(row=row, column=0, sticky="w", pady=(12, 4))
         all_part_frame = ttk.Frame(frame)
         all_part_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=(12, 4))
@@ -128,14 +136,14 @@ class Ps1StepMixin:
         ttk.Label(frame, text="Basis of statement:", width=LABEL_WIDTH).grid(row=row, column=0, sticky="w", pady=(12, 4))
         compliance_frame = ttk.Frame(frame)
         compliance_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=(12, 4))
-        for col, option in enumerate(COMPLIANCE_ALT_OPTIONS):
-            ttk.Radiobutton(
-                compliance_frame,
-                text=option,
-                variable=self.compliance_alt_var,
-                value=option,
-                command=self._on_compliance_alt_change,
-            ).grid(row=0, column=col, sticky="w", padx=(0, 16))
+        # Independent checkboxes, not mutually-exclusive radios - a PS1 can
+        # rely on both Compliance and Alternative solution at once.
+        ttk.Checkbutton(
+            compliance_frame, text="Compliance", variable=self.compliance_var, command=self._on_compliance_alt_change
+        ).grid(row=0, column=0, sticky="w", padx=(0, 16))
+        ttk.Checkbutton(
+            compliance_frame, text="Alternative", variable=self.alternative_var, command=self._on_compliance_alt_change
+        ).grid(row=0, column=1, sticky="w", padx=(0, 16))
         row += 1
 
         ttk.Label(frame, text="Compliance method(s)\n(if Compliance):", justify="left", width=LABEL_WIDTH).grid(
@@ -144,7 +152,7 @@ class Ps1StepMixin:
         b1_frame = ttk.Frame(frame)
         b1_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=4)
         self._b1_checkbuttons = {}
-        b1_state = "normal" if self.compliance_alt_var.get() == "Compliance" else "disabled"
+        b1_state = "normal" if self.compliance_var.get() else "disabled"
         for col, option in enumerate(B1_OPTIONS):
             cb = ttk.Checkbutton(b1_frame, text=option, variable=self.b1_vars[option], state=b1_state)
             cb.grid(row=0, column=col, sticky="w", padx=(0, 16))
@@ -283,13 +291,11 @@ class Ps1StepMixin:
         return _format_ordinal_date(date_value)
 
     def _on_compliance_alt_change(self) -> None:
-        choice = self.compliance_alt_var.get()
-
-        b1_state = "normal" if choice == "Compliance" else "disabled"
+        b1_state = "normal" if self.compliance_var.get() else "disabled"
         for cb in self._b1_checkbuttons.values():
             if cb.winfo_exists():
                 cb.configure(state=b1_state)
-        if choice != "Compliance":
+        if not self.compliance_var.get():
             for var in self.b1_vars.values():
                 var.set(False)
 
@@ -297,22 +303,25 @@ class Ps1StepMixin:
         if widget is None or not widget.winfo_exists():
             return
 
-        if choice == "Compliance":
-            widget.delete("1.0", "end")
-            widget.insert("1.0", "N/A")
-            widget.configure(state="disabled")
-        elif choice == "Alternative":
+        if self.alternative_var.get():
             widget.configure(state="normal")
             widget.delete("1.0", "end")
             widget.insert("1.0", self.alternative_solution_text)
+        else:
+            widget.configure(state="normal")
+            widget.delete("1.0", "end")
+            widget.insert("1.0", "N/A")
+            widget.configure(state="disabled")
 
     def _sync_ps1_text_fields(self) -> None:
         if self._description_of_work_widget is not None and self._description_of_work_widget.winfo_exists():
             self.description_of_work_text = self._description_of_work_widget.get("1.0", "end-1c")
         if self._legal_description_widget is not None and self._legal_description_widget.winfo_exists():
             self.legal_description_text = self._legal_description_widget.get("1.0", "end-1c")
+        if self._site_verification_widget is not None and self._site_verification_widget.winfo_exists():
+            self.site_verification_text = self._site_verification_widget.get("1.0", "end-1c")
         if (
-            self.compliance_alt_var.get() == "Alternative"
+            self.alternative_var.get()
             and self._alternative_solution_widget is not None
             and self._alternative_solution_widget.winfo_exists()
         ):
@@ -329,10 +338,10 @@ class Ps1StepMixin:
         if self.all_part_var.get() not in ALL_PART_OPTIONS:
             messagebox.showerror("Missing info", 'Select "All" or "Part only".')
             return False
-        if self.compliance_alt_var.get() not in COMPLIANCE_ALT_OPTIONS:
-            messagebox.showerror("Missing info", 'Select "Compliance" or "Alternative".')
+        if not self.compliance_var.get() and not self.alternative_var.get():
+            messagebox.showerror("Missing info", 'Select "Compliance" and/or "Alternative".')
             return False
-        if self.compliance_alt_var.get() == "Alternative" and not self.alternative_solution_text.strip():
+        if self.alternative_var.get() and not self.alternative_solution_text.strip():
             messagebox.showerror("Missing info", 'Alternative solution is required when "Alternative" is selected.')
             return False
         return True

@@ -15,7 +15,6 @@ ROLE_OPTIONS = ["Carried out", "Supervised"]
 ALL_PART_OPTIONS = ["All", "Part only"]
 YES_NO_OPTIONS = ["Yes", "No"]
 CM_ITEMS = ["CM1", "CM2", "CM3", "CM4", "CM5"]
-COMPLIANCE_ALT_OPTIONS = ["Compliance", "Alternative"]
 B1_OPTIONS = ["B1/VM1", "B1/MV4", "B1/AS1"]
 MONTH_NAMES = [
     "January", "February", "March", "April", "May", "June",

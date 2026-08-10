@@ -103,6 +103,14 @@ class GeneralStepMixin:
             if widget.winfo_exists() and str(widget.cget("state")) == "normal":
                 self.scope_vars[item]["description"] = widget.get("1.0", "end-1c")
 
+    def _scope_description_lines(self, item: str) -> list[str]:
+        """Split a scope item's free-text description into individual
+        lines - each Enter-separated line the user types becomes one
+        bullet point (in the LBP form's description cell) or one
+        semicolon-joined clause (in the {{scope}} summary list)."""
+        text = self.scope_vars[item]["description"]
+        return [line.strip() for line in text.split("\n") if line.strip()]
+
     def _update_availability_status(self) -> None:
         # The label lives on the General step and gets destroyed whenever the
         # wizard navigates to a different step, so a stale reference here

@@ -56,16 +56,37 @@ class ReviewStepMixin:
     def _build_scope_lines(self) -> list[str]:
         # Plain text, no manual "- " prefix: the bullet glyph comes from a
         # real Word numbering definition, not a typed dash character.
+        # {{scope}} is every selected item's individual bullet lines
+        # flattened into one combined list - the exact same lines that
+        # appear (per item) in the LBP form's description cells, just
+        # gathered together here instead of split by item.
         self._sync_scope_descriptions()
-        return [
-            self.scope_vars[item]["description"].strip()
+        lines: list[str] = []
+        for item in SCOPE_ITEMS:
+            if self.scope_vars[item]["selected"].get():
+                lines.extend(self._scope_description_lines(item))
+        return lines
+
+    def _build_lbp_description_bullets(self) -> dict[str, list[str]]:
+        # LBP form's per-item description cell: each Enter-separated line
+        # the user typed becomes its own real bullet point, one {{lbp_
+        # <item>_description}} placeholder per selected Scope item. Only
+        # selected items are included - unselected ones keep their token in
+        # the plain replacements dict instead (see _build_replacements),
+        # blanked to "" so their cell's paragraph survives, since an empty
+        # bullet list here would delete the placeholder's own paragraph and
+        # leave the table cell without one.
+        self._sync_scope_descriptions()
+        return {
+            f"lbp_{item.lower()}_description": self._scope_description_lines(item)
             for item in SCOPE_ITEMS
             if self.scope_vars[item]["selected"].get()
-        ]
+        }
 
     def _build_replacements(self) -> dict[str, str]:
         all_part = self.all_part_var.get()
-        compliance_alt = self.compliance_alt_var.get()
+        compliance_selected = self.compliance_var.get()
+        alternative_selected = self.alternative_var.get()
         b1_selected = [option for option in B1_OPTIONS if self.b1_vars[option].get()]
 
         street = self.street_var.get().strip()
@@ -83,12 +104,16 @@ class ReviewStepMixin:
             "description_of_work": self.description_of_work_text.strip(),
             # "legel_description" matches a typo baked into the PS1 template's placeholder token.
             "legel_description": self.legal_description_text.strip(),
+            # "site_verfication" matches a typo baked into the PS1 template's placeholder token.
+            "site_verfication": self.site_verification_text.strip(),
             "all_box": CHECKED if all_part == "All" else UNCHECKED,
             "part_box": CHECKED if all_part == "Part only" else UNCHECKED,
-            "compliance_box": CHECKED if compliance_alt == "Compliance" else UNCHECKED,
-            "alternative_box": CHECKED if compliance_alt == "Alternative" else UNCHECKED,
-            "compliance_solution": "; ".join(b1_selected) if compliance_alt == "Compliance" else "",
-            "alternative_solution": "N/A" if compliance_alt == "Compliance" else self.alternative_solution_text.strip(),
+            # Compliance and Alternative are independent checkboxes now, not
+            # mutually exclusive - both can be ticked in the output at once.
+            "compliance_box": CHECKED if compliance_selected else UNCHECKED,
+            "alternative_box": CHECKED if alternative_selected else UNCHECKED,
+            "compliance_solution": "; ".join(b1_selected) if compliance_selected else "",
+            "alternative_solution": self.alternative_solution_text.strip() if alternative_selected else "N/A",
             "date": self._format_selected_date(),
         }
         for item in CM_ITEMS:
@@ -104,7 +129,9 @@ class ReviewStepMixin:
             selected = self.scope_vars[item]["selected"].get()
             replacements[f"lbp_{key}_box"] = CHECKED if selected else UNCHECKED
             if selected:
-                replacements[f"lbp_{key}_description"] = self.scope_vars[item]["description"].strip()
+                # lbp_{key}_description is deliberately not set here - it
+                # goes through bullet_lists instead (see
+                # _build_lbp_description_bullets).
                 replacements[f"lbp_{key}_carried_by"] = role
                 replacements[f"lbp_{key}_reference"] = f"Engsolution drawings #{job_number}"
             else:
@@ -154,6 +181,7 @@ class ReviewStepMixin:
         summary = "\n".join(f"{name}: {path}" for name, path in created.items())
         replacements = self._build_replacements()
         bullet_lists = {"scope": self._build_scope_lines()}
+        bullet_lists.update(self._build_lbp_description_bullets())
 
         specification_sections = {title for title in SPECIFICATION_SECTIONS if self.specification_vars[title].get()}
         b2_letter_materials = {
@@ -259,10 +287,12 @@ class ReviewStepMixin:
         self.council_name_var.set("")
         self.description_of_work_text = ""
         self.legal_description_text = ""
+        self.site_verification_text = ""
         self.all_part_var.set("")
         for item in CM_ITEMS:
             self.cm_vars[item].set(False)
-        self.compliance_alt_var.set("")
+        self.compliance_var.set(False)
+        self.alternative_var.set(False)
         for option in B1_OPTIONS:
             self.b1_vars[option].set(False)
         self.alternative_solution_text = ""
