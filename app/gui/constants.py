@@ -77,3 +77,53 @@ B2_LETTER_TEMPLATE = TEMPLATES_DIR / "B2 Letter.docx"
 # Compliance/Notes table, in document order - must match that document's
 # text exactly (see word_filler's _remove_unselected_table_rows).
 B2_LETTER_MATERIALS = ["Reinforced concrete", "Structural timber", "Mild steel structure"]
+
+# PS1's "Schedule 3 - Schedule of Inspections" table (see word_filler's
+# _remove_unselected_table_rows, called with label_column=1 since the
+# Item-of-inspection column - unlike the No. column - has fixed,
+# known-in-advance text to match rows on before the No. tokens get filled
+# with the user's chosen order). (key, item text, time frame text) - item
+# and time frame text must match that table's text exactly.
+INSPECTION_ITEMS: list[tuple[str, str, str]] = [
+    ("subsurface", "Subsurface and bearing condition.", "Cut inspection. To be confirmed on site."),
+    ("waffle", "Waffle foundation.", "Pre-pour inspection."),
+    (
+        "floor_diaphragm",
+        "Floor diaphragm",
+        "After erection and prior to installation of first floor framing.",
+    ),
+    (
+        "mid_floor_joist",
+        "Mid floor joist and all associated beams and lintels and steelwork.",
+        "Pre roof inspection. After erection and prior to lining/insulation/cladding.",
+    ),
+    (
+        "hold_down_brackets",
+        "Hold down brackets and bracing wall length to wall sheet bracing.",
+        "Pre-line inspection. After erection and prior to lining/insulation/cladding.",
+    ),
+    (
+        "ceiling_roof_strap",
+        "Ceiling/roof strap braces",
+        "Pre-line inspection. After erection and prior to lining/insulation/cladding.",
+    ),
+    (
+        "wall_lining",
+        "Wall lining and associated fixing schedule.",
+        "Post line inspection. After lining and prior to stop",
+    ),
+]
+
+# The "Other" row's Item-of-inspection cell holds the literal token text
+# "{{inspection_other_description}}" in the template - keep_table_rows
+# matching runs *before* token replacement, so this is exactly what that
+# cell's text still reads at match time (same idea as the fixed items
+# above being matched on their own permanent item text). The normal
+# token-replacement pass then overwrites it with the user's free-text
+# value, same as every other token - there's no separate sentinel step.
+INSPECTION_OTHER_KEY = "other"
+INSPECTION_OTHER_LABEL = "{{inspection_other_description}}"
+INSPECTION_ITEM_LABELS: dict[str, str] = {key: item_text for key, item_text, _time_frame in INSPECTION_ITEMS}
+
+# document.tables index of PS1's Schedule of Inspections table.
+PS1_INSPECTION_TABLE_INDEX = 2

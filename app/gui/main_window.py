@@ -6,10 +6,12 @@ Steps:
 1. General - job number, client info, street/suburb/town, scope, role.
 2. PS1 Input - council, description of work, scope of statement,
    construction-monitoring level, basis of statement, date.
-3. Waivers and Modifications - the LBP form's YES/NO waiver section.
-4. Specification - pick which Specifications.docx sections apply.
-5. B2 Letter - placeholder, details TBD.
-6. Review & Create - single Create button that generates everything:
+3. Inspection Schedule - which of PS1's typical inspection items apply,
+   plus an optional free-text "Other" item, and their order.
+4. Waivers and Modifications - the LBP form's YES/NO waiver section.
+5. Specification - pick which Specifications.docx sections apply.
+6. B2 Letter - placeholder, details TBD.
+7. Review & Create - single Create button that generates everything:
    project folders plus the Project register, PS1, LBP form, Calculation
    Statement, and Specifications documents.
 
@@ -34,6 +36,7 @@ from typing import Any
 from app.config.settings import load_settings
 from app.gui.steps.b2_letter_step import B2LetterStepMixin
 from app.gui.steps.general_step import GeneralStepMixin
+from app.gui.steps.inspection_step import InspectionStepMixin
 from app.gui.steps.ps1_step import Ps1StepMixin
 from app.gui.steps.review_step import ReviewStepMixin
 from app.gui.steps.settings_step import SettingsStepMixin
@@ -45,6 +48,7 @@ class MainWindow(
     SettingsStepMixin,
     GeneralStepMixin,
     Ps1StepMixin,
+    InspectionStepMixin,
     WaiversStepMixin,
     SpecificationStepMixin,
     B2LetterStepMixin,
@@ -92,6 +96,7 @@ class MainWindow(
         self._init_settings_vars()
         self._init_general_vars()
         self._init_ps1_vars()
+        self._init_inspection_vars()
         self._init_waivers_vars()
         self._init_specification_vars()
         self._init_b2_letter_vars()
@@ -105,6 +110,13 @@ class MainWindow(
             )
         steps.append({"title": "General", "build": self._build_general_step, "validate": self._validate_general_step})
         steps.append({"title": "PS1 Input", "build": self._build_ps1_step, "validate": self._validate_ps1_step})
+        steps.append(
+            {
+                "title": "Inspection Schedule",
+                "build": self._build_inspection_step,
+                "validate": self._validate_inspection_step,
+            }
+        )
         steps.append(
             {
                 "title": "Waivers and Modifications",

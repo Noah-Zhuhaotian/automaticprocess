@@ -347,21 +347,72 @@ def _remove_unselected_sections(document: Document, keep_titles: set[str]) -> No
 
 
 def _remove_unselected_table_rows(
-    document: Document, table_index: int, keep_row_labels: set[str], header_rows: int = 1
+    document: Document,
+    table_index: int,
+    keep_row_labels: set[str],
+    header_rows: int = 1,
+    label_column: int = 0,
 ) -> None:
     """Delete every data row (after the first `header_rows` rows) of
-    `document.tables[table_index]` whose first-cell text isn't in
+    `document.tables[table_index]` whose `label_column` cell text isn't in
     `keep_row_labels` - e.g. the Material/Means of Compliance/Notes table
-    in B2 Letter.docx, where the user picks which material rows apply.
-    Row content itself is never touched, only whether the row survives.
+    in B2 Letter.docx, where the user picks which material rows apply
+    (label_column=0, the default, since that table's first cell is the
+    stable material name). PS1's Schedule of Inspections table instead
+    matches on label_column=1 (Item of inspection) because its first
+    column (No.) holds a per-row order token that's still unfilled at this
+    point - see INSPECTION_ITEMS in constants.py. Row content itself is
+    never touched, only whether the row survives.
     """
     table = document.tables[table_index]
     trs = table._tbl.findall(qn("w:tr"))
     for tr in trs[header_rows:]:
-        tc = tr.find(qn("w:tc"))
-        label = _Cell(tc, table).text.strip()
+        tcs = tr.findall(qn("w:tc"))
+        label = _Cell(tcs[label_column], table).text.strip()
         if label not in keep_row_labels:
             tr.getparent().remove(tr)
+
+
+def _reorder_table_rows(
+    document: Document,
+    table_index: int,
+    row_order: list[str],
+    header_rows: int = 1,
+    label_column: int = 0,
+) -> None:
+    """Physically move document.tables[table_index]'s data rows into the
+    sequence given by row_order (a list of label_column text values) -
+    e.g. PS1's Schedule of Inspections, where the user's chosen order has
+    to show up as the actual row order in the table, not just as
+    different {{...}}_no values inside rows that stay in template order
+    (assigning the right number to each row isn't enough on its own - a
+    real bug the user caught: numbers were correct but rows never moved).
+    Call after _remove_unselected_table_rows (so only surviving rows are
+    present) and before token replacement. Any row whose label isn't in
+    row_order is left in its current position.
+    """
+    table = document.tables[table_index]
+    tbl = table._tbl
+    trs = tbl.findall(qn("w:tr"))
+    header_trs = trs[:header_rows]
+    data_trs = trs[header_rows:]
+
+    by_label = {}
+    for tr in data_trs:
+        tcs = tr.findall(qn("w:tc"))
+        label = _Cell(tcs[label_column], table).text.strip()
+        by_label[label] = tr
+
+    anchor = header_trs[-1] if header_trs else None
+    for label in row_order:
+        tr = by_label.get(label)
+        if tr is None:
+            continue
+        if anchor is None:
+            tbl.insert(0, tr)
+        else:
+            anchor.addnext(tr)
+        anchor = tr
 
 
 def fill_docx_template(
@@ -371,6 +422,8 @@ def fill_docx_template(
     bullet_lists: dict[str, list[str]] | None = None,
     keep_sections: set[str] | None = None,
     keep_table_rows: dict[int, set[str]] | None = None,
+    keep_table_row_label_columns: dict[int, int] | None = None,
+    table_row_order: dict[int, list[str]] | None = None,
 ) -> Path:
     """Copy template_path to output_path and replace {{placeholder}} tokens.
 
@@ -383,10 +436,18 @@ def fill_docx_template(
     section whose heading text isn't in the set (see
     _remove_unselected_sections) before any token replacement runs, so
     tokens that only exist inside a removed section never need a value.
-    keep_table_rows, if given, maps a table index to the set of first-cell
-    labels whose rows should survive in that table (see
+    keep_table_rows, if given, maps a table index to the set of labels
+    whose rows should survive in that table (see
     _remove_unselected_table_rows) - applied the same "before replacement"
-    way as keep_sections.
+    way as keep_sections. Matches on each row's first cell by default;
+    keep_table_row_label_columns can map that same table index to a
+    different 0-based column instead, for tables (like PS1's Schedule of
+    Inspections) whose first column isn't stable label text.
+    table_row_order, if given, maps a table index to the list of labels in
+    the order its surviving rows should physically appear in (see
+    _reorder_table_rows) - applied right after keep_table_rows, for tables
+    where row order itself is user-controlled (assigning the right number
+    to a row isn't enough if the row never actually moves).
     Raises FileNotFoundError if the template is missing, and
     FileExistsError if output_path already exists (never overwrites).
     """
@@ -408,7 +469,12 @@ def fill_docx_template(
         _remove_unselected_sections(document, keep_sections)
 
     for table_index, keep_row_labels in (keep_table_rows or {}).items():
-        _remove_unselected_table_rows(document, table_index, keep_row_labels)
+        label_column = (keep_table_row_label_columns or {}).get(table_index, 0)
+        _remove_unselected_table_rows(document, table_index, keep_row_labels, label_column=label_column)
+
+    for table_index, row_order in (table_row_order or {}).items():
+        label_column = (keep_table_row_label_columns or {}).get(table_index, 0)
+        _reorder_table_rows(document, table_index, row_order, label_column=label_column)
 
     skip_warning_keys = frozenset((bullet_lists or {}).keys())
 

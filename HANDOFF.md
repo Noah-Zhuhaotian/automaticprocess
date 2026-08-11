@@ -30,65 +30,48 @@ Street/Suburb/Town; LBP form wired up as a third generated document),
 Calculation Statement wired up, `main_window.py` split into
 `constants.py` + `steps/`), `67ce123` (green-✔ success dialog; fixed
 stale step numbering after a first-run Settings step - both found by
-the user testing the app). *This* handoff is **not yet committed** -
-`app/core/word_filler.py`, `app/gui/constants.py`,
-`app/gui/steps/general_step.py`, `app/gui/steps/ps1_step.py`,
-`app/gui/steps/review_step.py`, and both
-`resources/templates/PS1 Producer Statement.docx` and
-`resources/templates/LBP form.docx` are modified in the working tree:
+the user testing the app), `4a71507` (independent Compliance/Alternative
+checkboxes, Site verification field, LBP/`{{scope}}` genuine bullet
+lists, PS1's `{{scope}}` shading fix, LBP page break before "WAIVERS AND
+MODIFICATIONS" - see that commit's message and git history for the full
+per-item detail, since it's condensed here to make room for *this*
+handoff's own work).
 
-1. **Compliance and Alternative on PS1 Input are now independent
-   checkboxes, not a mutually-exclusive radio pair.** The user can tick
-   both at once (a PS1 can genuinely rely on both at the same time). See
-   "PS1 Input" and "Word filling" below for exactly what changed.
-2. **New "Site verification" free-text field on PS1 Input**, feeding a
-   `{{site_verfication}}` token already present in the PS1 template (typo
-   spelling kept, same convention as the pre-existing `legel_description`
-   token). Not required, synced/reset the same way as Description of
-   work/Legal description.
-3. **LBP form's per-item description cells are now genuine Word bulleted
-   lists, one bullet per line the user types** (Enter-separated) in that
-   Scope item's existing description box on the General step - no new UI,
-   the user just presses Enter between points. `{{scope}}` (the PS1/
-   Project register summary list) now flattens every selected item's
-   individual lines into one combined bullet list, matching exactly what
-   appears split across the LBP cells, instead of one merged line per
-   item. See "Word filling" for the mechanism and constants.py/
-   general_step.py/review_step.py for what changed.
-4. **PS1's `{{scope}}` bullets now carry the same grey shading
-   (`F2F2F2`/background1/shade F2) as LBP form's description cells,
-   growing/shrinking with however many bullets exist.** Previously the
-   grey "shading" behind `{{scope}}` in the PS1 template wasn't real
-   paragraph/cell shading at all - it was a fixed-size decorative
-   rectangle shape floating *behind* the text (`behindDoc="1"`,
-   `<a:noAutofit/>`), completely disconnected from the text's actual
-   height, so it never grew when more bullets were added. Fixed by a
-   one-off template migration (removed the decorative shape, added real
-   `w:shd` to the `{{scope}}` paragraph's `w:pPr`) plus a small
-   `word_filler.py` change so `_insert_bullet_paragraph_after` now
-   propagates a placeholder paragraph's own `w:shd` onto every bullet
-   paragraph it generates - the same "reuse the placeholder's own
-   formatting" idea already used for `rPr`/font, just extended to
-   shading. Verified against the real template: N bullets → N shaded
-   paragraphs. Project register.docx's own `{{scope}}` never had any
-   shading to begin with (confirmed by inspection) - left untouched.
-5. **Unexplained but accepted: `resources/templates/LBP form.docx` picked
-   up 8 blank paragraphs before "WAIVERS AND MODIFICATIONS"**, most likely
-   from Word auto-save while the user had it open on-screen during this
-   session (table content/tokens/checkboxes all confirmed byte-identical
-   to the last commit - only body paragraph whitespace changed). Not
-   caused by any script or code change this handoff. The user was asked
-   and explicitly chose to leave it as-is rather than reverting.
-6. **"WAIVERS AND MODIFICATIONS" now always starts on a new page in LBP
-   form.docx**, regardless of how much (or little) content precedes it -
-   the user noticed short content above it let the heading "ride up" onto
-   the same page. Fixed with python-docx's own `paragraph.paragraph_format
-   .page_break_before = True` on that heading paragraph (a real Word
-   "page break before" paragraph property, not a manually inserted page
-   break character) - a one-line template edit, no `word_filler.py`
-   change needed. Verified the property survives a full
-   `fill_docx_template` pass and that every table's content/tokens are
-   still byte-identical to before this edit.
+*This* handoff is **not yet committed** - `app/core/word_filler.py`,
+`app/gui/constants.py`, `app/gui/main_window.py`, the new
+`app/gui/steps/inspection_step.py`, `app/gui/steps/review_step.py`, and
+`resources/templates/PS1 Producer Statement.docx` are modified/added in
+the working tree:
+
+1. **New "Inspection Schedule" wizard step**, feeding PS1's "Schedule 3 -
+   Schedule of Inspections" table. The user checks which of 7 typical
+   inspection items apply (previously only 2 of the 7 existed in the
+   template at all - see "Word filling" below), optionally adds one
+   free-text "Other" item, and orders the selected items with Move Up/
+   Move Down buttons against a live-updating `tk.Listbox` - that order
+   becomes the table's No. column. Requested because the PS1 Input step
+   was already visually full and this is conceptually a separate concern
+   (which inspections apply), so - like Waivers/Specification/B2 Letter
+   before it - it got its own step rather than being squeezed in.
+   `INSPECTION_ITEMS`/`INSPECTION_OTHER_KEY`/`INSPECTION_OTHER_LABEL`/
+   `INSPECTION_ITEM_LABELS`/`PS1_INSPECTION_TABLE_INDEX` in
+   `constants.py`; new `app/gui/steps/inspection_step.py`
+   (`InspectionStepMixin`); wired into `main_window.py` (composition,
+   `_init_vars`, `_build_step_list`, right after PS1 Input) and
+   `review_step.py` (`_build_inspection_replacements`,
+   `_inspection_row_order_labels`, `_reset_for_new_project`). See "Word
+   filling" for the template mechanism and "What Didn't Work" for two real
+   bugs this caught before it shipped - one from headless testing, one
+   from **the user's own click-through**, which caught something headless
+   testing missed entirely: the No. tokens were correct but the table
+   *rows themselves* stayed in template order (only assigning numbers, not
+   moving rows), so a reordered list showed the right numbers next to the
+   wrong rows. Fixed with a new `_reorder_table_rows` in `word_filler.py`
+   (physically moves each surviving `<w:tr>` into the chosen sequence,
+   wired through `fill_docx_template` as `table_row_order: dict[int,
+   list[str]] | None`) - `review_step.py`'s `_inspection_row_order_labels`
+   now returns an ordered list that drives both which rows survive (as a
+   set, for `keep_table_rows`) and the physical order they end up in.
 
 `67ce123`'s own changes (historical record, already pushed):
 
@@ -162,6 +145,7 @@ app/
 │       ├── settings_step.py
 │       ├── general_step.py
 │       ├── ps1_step.py
+│       ├── inspection_step.py
 │       ├── waivers_step.py
 │       ├── specification_step.py
 │       ├── b2_letter_step.py
@@ -208,8 +192,9 @@ now split by concern, pure reorganization with no logic rewritten:
   `general_step.py`) - this works because everything ends up on the same
   composed `self`, no imports needed between step modules.
 - **`main_window.py`** — `MainWindow(SettingsStepMixin, GeneralStepMixin,
-  Ps1StepMixin, WaiversStepMixin, SpecificationStepMixin,
-  B2LetterStepMixin, ReviewStepMixin, tk.Tk)` composes every mixin via
+  Ps1StepMixin, InspectionStepMixin, WaiversStepMixin,
+  SpecificationStepMixin, B2LetterStepMixin, ReviewStepMixin, tk.Tk)`
+  composes every mixin via
   multiple inheritance. `_init_vars()` just calls each mixin's
   `_init_*_vars()` in order; `_build_step_list()`/`_show_step()`/
   `_go_back()`/`_go_next()` (shared navigation, not tied to one step)
@@ -276,7 +261,16 @@ layout" above:
    `LABEL_WIDTH` on every label — both were tuned live against user
    screenshots; if asked to adjust spacing again, expect another
    iteration or two of "too wide/too tight" feedback.
-4. **Waivers and Modifications** (this handoff) — a step dedicated to the
+4. **Inspection Schedule** (this handoff) — PS1's "Schedule 3 - Schedule of
+   Inspections" table. A checkbox per typical inspection item
+   (`INSPECTION_ITEMS`, 7 items) plus an "Other" checkbox gating a free-text
+   Item-of-inspection/Time-frame pair, at least one item required overall
+   (Other additionally requires both its own fields filled once ticked).
+   Selected items appear in a `tk.Listbox` (`self.inspection_order`, the
+   single source of truth for both inclusion and sequence) with Move
+   Up/Move Down buttons re-sorting it - that final order becomes the
+   table's No. column. See "Word filling" for the template mechanism.
+5. **Waivers and Modifications** (previous handoff, `4814414`) — a step dedicated to the
    LBP form's "WAIVERS AND MODIFICATIONS" section: a Yes/No radio
    (`waivers_required_var`) for "Are waivers or modifications of the
    Building Code required?", gating a Building Code Clause `ttk.Entry`
@@ -286,7 +280,7 @@ layout" above:
    `_on_waivers_required_change` mirrors `_on_compliance_alt_change`).
    Reuses `LABEL_WIDTH`/the 3:7 column split from PS1 Input for visual
    consistency.
-5. **Specification** — no longer a stub. One checkbox per top-level
+6. **Specification** — no longer a stub. One checkbox per top-level
    section of Specifications.docx (`SPECIFICATION_SECTIONS`, 7 items -
    GENERAL STRUCTURAL CONSTRUCTION, EXCAVATION AND HARDFILL, CONCRETE -
    GENERAL, REINFORCING STEEL, STRUCTURAL STEELWORK, STRUCTURAL TIMBER,
@@ -297,14 +291,14 @@ layout" above:
    and disabled otherwise (same gating idiom as Waivers/Compliance). See
    "Word filling" for how unpicked sections actually get removed from
    the output.
-6. **B2 Letter** — no longer a stub either. Three checkboxes
+7. **B2 Letter** — no longer a stub either. Three checkboxes
    (`B2_LETTER_MATERIALS`: Reinforced concrete, Structural timber, Mild
    steel structure), at least one required - controls which rows survive
    in B2 Letter.docx's Material/Means of Compliance/Notes table. Row
    *content* is fixed (the user said so explicitly - "内容不用变"); this
    step only toggles which rows appear. See "Word filling" for the
    removal mechanism.
-7. **Review & Create** — the Next button becomes "Create" on the last
+8. **Review & Create** — the Next button becomes "Create" on the last
    step. Runs `folder_creator.create_project_folders`, then
    `word_filler.fill_docx_template` for each of the **six** templates
    (Project register, PS1, LBP form, Calculation Statement,
@@ -312,7 +306,8 @@ layout" above:
    is missing), then shows a success dialog (see "Success dialog"
    below), then calls `_reset_for_new_project()` which blanks every
    *project* field (job number, street/suburb/town, scope, PS1 fields,
-   waivers fields, Specification/B2 Letter selections, date, etc.),
+   inspection schedule selections/order, waivers fields,
+   Specification/B2 Letter selections, date, etc.),
    **rebuilds `self.steps`** (this handoff - see the Repo note above;
    picks up Settings dropping out of the list if it was just completed
    this session), and jumps back to the General step — but leaves drive
@@ -570,6 +565,61 @@ Row *content* was explicitly not to be changed - this only controls
 which rows exist, matching the pattern of "structural cut before token
 replacement" that Specification established for whole sections.
 
+**PS1's "Schedule 3 - Schedule of Inspections" table (this handoff) - the
+same row-removal idea, but matched on a *different* column, plus a
+per-row order token:** the table only had 2 of the 7 typical inspection
+items hardcoded as plain text (no tokens at all) before this handoff - the
+other 5, plus a new free-text "Other" row, were added by a one-off
+migration script (same copy-verify-then-real-file workflow as every other
+template surgery here), each row a deep-copy of the existing Subsurface
+row so its Verdana/8pt/shaded-No.-cell formatting carries over exactly.
+Every row's No. cell is now a per-item token (`{{inspection_<key>_no}}`)
+instead of the old hardcoded "1"/"2" - **`_remove_unselected_table_rows`
+gained a `label_column` parameter (default 0, so B2 Letter's call site is
+unaffected)** because this table's *first* column is the one thing that's
+never stable (it's the order the user picks), so row-selection has to
+match on the **Item of inspection** column (`label_column=1`) instead -
+wired through `fill_docx_template` as a new
+`keep_table_row_label_columns: dict[int, int] | None` parameter, applied
+alongside the existing `keep_table_rows` dict. The "Other" row's Item
+cell holds the literal text `{{inspection_other_description}}` in the
+template - since row-matching runs *before* token replacement, that's
+still exactly what the cell reads at match time, so `INSPECTION_OTHER_LABEL`
+(in constants.py) is set to that same literal string rather than a plain
+word like "Other" - **a first attempt used the plain word "Other" as a
+match-only sentinel, assuming the token substitution would separately
+overwrite it, but nothing ever put the token there in the first place, so
+the literal word "Other" silently survived into real output instead of
+the user's typed description** (caught by the end-to-end headless test
+before this shipped, not by inspection - see "What Didn't Work"). Order
+numbers themselves come from `_build_inspection_replacements()` in
+review_step.py, one `str(position)` per key in `self.inspection_order`
+(1-based, in the user's chosen order) - deliberately not derived from
+`self.inspection_vars` at replacement time, since only `inspection_order`
+(built and reordered by the new step's Move Up/Down buttons) records the
+user's actual chosen sequence.
+
+**Assigning the right number to a row is not the same as the row being in
+that position** - the first version stopped there, and the user's own
+click-through immediately caught it: numbers were correct but the table's
+physical row order stayed exactly as the template laid it out (Subsurface,
+Waffle, Floor diaphragm, ... Other), since `_remove_unselected_table_rows`
+only ever deletes, never reorders. A new `_reorder_table_rows` (same file)
+walks a table's surviving `<w:tr>` elements, builds a `label → <w:tr>` map
+(same `label_column` idea as removal), then re-parents each one via
+`.addnext()` in the order given, right after `_remove_unselected_table_rows`
+and before token replacement - `.addnext()` on an *existing* element
+moves it (lxml elements only ever have one parent) rather than creating a
+duplicate, so no new mechanism was needed beyond what `_insert_bullet_
+paragraph_after` already relies on for the same reason. Wired through
+`fill_docx_template` as `table_row_order: dict[int, list[str]] | None`,
+using `keep_table_row_label_columns` for the column exactly like
+`keep_table_rows` does. `review_step.py`'s `_inspection_row_order_labels()`
+replaced the old `_inspection_keep_labels()` - one ordered list now drives
+both `keep_table_rows` (via `set(...)`) and `table_row_order` directly, so
+there's only one place that translates `self.inspection_order` into
+template-facing labels.
+
 ### Step 1 logic ([app/core/folder_creator.py](app/core/folder_creator.py))
 Folder name = `"{Job Number} - {Street}"` (was `{Address}` before the
 Street/Suburb/Town split - see "Address → Street/Suburb/Town split"
@@ -717,6 +767,36 @@ partial mess.
   generated bullet paragraph the same way. Confirmed end-to-end against a
   real filled document (N bullets → N shaded paragraphs), not just by
   inspecting the template after migration.
+- **`_remove_unselected_table_rows`'s "match on a stable column before
+  replacement" idea generalized to a table whose *first* column isn't
+  stable** (PS1's Inspection Schedule - the No. column is exactly the
+  thing the user controls, via reordering). Adding one `label_column`
+  parameter (default 0, so B2 Letter's existing call site needed no
+  change) was enough - didn't need a new mechanism, just matching on
+  column 1 instead of 0 for this one table. Worth checking for this same
+  shape (first column unstable, another column isn't) before reaching for
+  something heavier if a future table needs row-selection.
+- **The end-to-end headless test caught a real bug that template
+  inspection alone would have missed** - see "What Didn't Work" for the
+  Inspection Schedule "Other" row's literal-"Other"-never-replaced bug.
+  Worth repeating: build the actual `.docx` and read back the specific
+  cell that was supposed to change, not just confirm the migration script
+  ran without error.
+- **The user's own click-through caught a bug the headless test's own
+  scripted reordering didn't surface** (numbers assigned correctly but
+  table rows never physically moved - see "What Didn't Work"). The
+  headless test *did* exercise `_move_inspection_item` and reordering
+  logic, but only checked the final `self.inspection_order` list and the
+  No. token values, never the physical row sequence in the generated
+  `.docx` - so it verified the *input* side of the reorder feature
+  thoroughly but not the *output* rendering, which is exactly the kind of
+  gap a real user looking at the real table catches immediately and a
+  script checking data structures doesn't. Confirms the standing "keep
+  having the user click through" lesson from earlier handoffs, but this
+  time the gap was in what the automated test bothered to *assert*, not
+  in what state it was willing to *set up* - worth designing table/order
+  verification specifically around "does the Nth physical row equal the
+  Nth expected item," not just "is the right value stored somewhere."
 
 ## What Didn't Work / Avoid Repeating
 
@@ -806,6 +886,53 @@ partial mess.
   glance** - reading a `.docx` with python-docx never writes it, but the
   user's own Word session editing the same file concurrently can, and it
   won't show up as something *you* did unless you check.
+- **A row-matching "sentinel" that isn't literally the token it's meant to
+  be replaced by.** First version of the Inspection Schedule's "Other" row
+  put the plain word "Other" in the template's Item-of-inspection cell,
+  intending for the later token-replacement pass to overwrite it with
+  `{{inspection_other_description}}`'s value - except nothing ever put
+  that token *in* the cell, so "Other" just stayed as literal, permanent
+  text in every generated PS1 document regardless of what the user typed.
+  Caught by the end-to-end headless test (read back the actual cell text
+  after a real `fill_docx_template` run), not by re-reading the migration
+  script, which looked correct in isolation. Fixed by making the cell's
+  literal template text the token itself
+  (`{{inspection_other_description}}`) and matching rows on that exact
+  string - row-matching runs *before* replacement, so the token text is
+  still what's there to match on. **If a row/cell needs to be both
+  "matched on" (before replacement) and "replaced" (after), the match
+  target and the token must be the same string** - a separate
+  human-readable sentinel that a later pass is "supposed to" overwrite is
+  a trap unless something concrete actually wires that overwrite up.
+- **A toggle handler that assumed every selectable key lives in the same
+  `dict[str, tk.BooleanVar]`.** `_on_inspection_toggle(key)` originally
+  read `self.inspection_vars[key].get()` to decide whether to add/remove
+  from the order list - crashed with `KeyError: 'other'` the moment the
+  Other checkbox (which uses its own separate `inspection_other_var`, not
+  an entry in `inspection_vars`) called it. Fixed by having callers pass
+  the resolved `selected: bool` in directly instead of the handler
+  re-deriving it from a dict that doesn't cover every key. Caught
+  immediately by the headless test (first thing exercised), before it
+  ever reached the user.
+- **Assuming a per-row token value is enough to represent row order,
+  without physically reordering the rows.** First version of the
+  Inspection Schedule feature computed the right `{{inspection_<key>_no}}`
+  value for every selected item based on `self.inspection_order`, but
+  `_remove_unselected_table_rows` only ever deletes non-surviving rows -
+  it never touches the surviving ones' relative order, which stays
+  exactly as laid out in the template. Result: reordering items in the
+  GUI changed the *numbers* shown in a real generated PS1 document but not
+  which row those numbers sat next to, e.g. "No. 1" next to Subsurface,
+  "No. 4" next to Floor diaphragm, "No. 2" next to Hold down brackets -
+  correct values, visibly wrong table. **The user caught this by actually
+  looking at a generated document** (see "What Worked") - it slipped past
+  the headless test because that test asserted on `self.inspection_order`
+  and the token dict, never on the physical row sequence of the output
+  `.docx`. Fixed with `_reorder_table_rows` (see "Word filling"). **A
+  "user picks the order" feature needs the *rendered* order verified, not
+  just the order value stored somewhere** - a plausible-looking correct
+  token is not proof the visual result is correct when position and value
+  are two separate things that both have to move together.
 
 ## Next Steps
 
@@ -823,7 +950,13 @@ partial mess.
    checkboxes/tables/section removal rendering correctly. An earlier
    attempt at simulating clicks/keystrokes to do this closed the app
    unexpectedly (see "What Didn't Work") - keep preferring the user's
-   own click-through over more coordinate-based automation.
+   own click-through over more coordinate-based automation. **The new
+   Inspection Schedule step especially** - the Move Up/Move Down
+   `tk.Listbox` interaction has only been driven programmatically
+   (`.selection_set()` + calling the button's command directly), never
+   actually clicked with a mouse, so its real feel (does a click land on
+   the right row, is the button layout sensible next to the listbox) is
+   still unconfirmed.
 2. **Consent Document folder** (`06 Consent Document`) now gets PS1, LBP
    form, Calculation Statement, Specifications, and B2 Letter - probably
    everything the user meant by "other documents belong there too" when

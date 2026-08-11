@@ -18,8 +18,12 @@ from app.gui.constants import (
     CALCULATION_STATEMENT_TEMPLATE,
     CHECKED,
     CM_ITEMS,
+    INSPECTION_ITEM_LABELS,
+    INSPECTION_OTHER_KEY,
+    INSPECTION_OTHER_LABEL,
     LBP_TEMPLATE,
     PROJECT_REGISTER_TEMPLATE,
+    PS1_INSPECTION_TABLE_INDEX,
     PS1_TEMPLATE,
     SCOPE_ITEMS,
     SPECIFICATION_SECTIONS,
@@ -83,6 +87,34 @@ class ReviewStepMixin:
             if self.scope_vars[item]["selected"].get()
         }
 
+    def _build_inspection_replacements(self) -> dict[str, str]:
+        # inspection_<key>_no is the user's chosen order (1-based position
+        # in self.inspection_order) - the No. column in PS1's Schedule of
+        # Inspections. Only selected items' tokens matter since
+        # unselected rows get deleted before replacement runs (see
+        # _inspection_keep_labels/keep_table_rows in _on_create).
+        replacements = {
+            f"inspection_{key}_no": str(position) for position, key in enumerate(self.inspection_order, start=1)
+        }
+        if self.inspection_other_var.get():
+            replacements["inspection_other_description"] = self.inspection_other_description_var.get().strip()
+            replacements["inspection_other_time_frame"] = self.inspection_other_time_frame_var.get().strip()
+        return replacements
+
+    def _inspection_row_order_labels(self) -> list[str]:
+        # Matches _remove_unselected_table_rows/_reorder_table_rows
+        # (label_column=1) against the Item-of-inspection column - the No.
+        # column can't be used since it's still an unfilled {{token}} at
+        # that point (see PS1_INSPECTION_TABLE_INDEX in constants.py). Kept
+        # in self.inspection_order's actual sequence so the same list
+        # drives both which rows survive (as a set) and the physical order
+        # they end up in (see _on_create) - assigning the right number to
+        # a row isn't enough on its own if the row itself never moves.
+        def label(key: str) -> str:
+            return INSPECTION_OTHER_LABEL if key == INSPECTION_OTHER_KEY else INSPECTION_ITEM_LABELS[key]
+
+        return [label(key) for key in self.inspection_order]
+
     def _build_replacements(self) -> dict[str, str]:
         all_part = self.all_part_var.get()
         compliance_selected = self.compliance_var.get()
@@ -118,6 +150,8 @@ class ReviewStepMixin:
         }
         for item in CM_ITEMS:
             replacements[f"{item.lower()}_box"] = CHECKED if self.cm_vars[item].get() else UNCHECKED
+
+        replacements.update(self._build_inspection_replacements())
 
         # LBP form's "restricted building work" table: one row per Scope
         # item, only filled in for items the user actually checked on the
@@ -187,15 +221,32 @@ class ReviewStepMixin:
         b2_letter_materials = {
             material for material in B2_LETTER_MATERIALS if self.b2_letter_material_vars[material].get()
         }
+        inspection_row_order = self._inspection_row_order_labels()
         documents = [
-            (PROJECT_REGISTER_TEMPLATE, Path("Project register.docx"), None, None),
-            (PS1_TEMPLATE, Path("06 Consent Document") / "PS1 Producer Statement.docx", None, None),
-            (LBP_TEMPLATE, Path("06 Consent Document") / "LBP form.docx", None, None),
-            (CALCULATION_STATEMENT_TEMPLATE, Path("06 Consent Document") / "Calculation Statement.docx", None, None),
+            (PROJECT_REGISTER_TEMPLATE, Path("Project register.docx"), None, None, None, None),
+            (
+                PS1_TEMPLATE,
+                Path("06 Consent Document") / "PS1 Producer Statement.docx",
+                None,
+                {PS1_INSPECTION_TABLE_INDEX: set(inspection_row_order)},
+                {PS1_INSPECTION_TABLE_INDEX: 1},
+                {PS1_INSPECTION_TABLE_INDEX: inspection_row_order},
+            ),
+            (LBP_TEMPLATE, Path("06 Consent Document") / "LBP form.docx", None, None, None, None),
+            (
+                CALCULATION_STATEMENT_TEMPLATE,
+                Path("06 Consent Document") / "Calculation Statement.docx",
+                None,
+                None,
+                None,
+                None,
+            ),
             (
                 SPECIFICATION_TEMPLATE,
                 Path("06 Consent Document") / "Specifications.docx",
                 specification_sections,
+                None,
+                None,
                 None,
             ),
             (
@@ -203,9 +254,18 @@ class ReviewStepMixin:
                 Path("06 Consent Document") / "B2 Letter.docx",
                 None,
                 {0: b2_letter_materials},
+                None,
+                None,
             ),
         ]
-        for template_path, relative_output, keep_sections, keep_table_rows in documents:
+        for (
+            template_path,
+            relative_output,
+            keep_sections,
+            keep_table_rows,
+            keep_table_row_label_columns,
+            table_row_order,
+        ) in documents:
             if not template_path.exists():
                 logger.info("Template not found at %s, skipping", template_path)
                 continue
@@ -217,6 +277,8 @@ class ReviewStepMixin:
                     bullet_lists,
                     keep_sections=keep_sections,
                     keep_table_rows=keep_table_rows,
+                    keep_table_row_label_columns=keep_table_row_label_columns,
+                    table_row_order=table_row_order,
                 )
                 summary += f"\n{relative_output}: {output_path}"
             except Exception as exc:  # noqa: BLE001
@@ -299,6 +361,13 @@ class ReviewStepMixin:
         self.date_year_var.set("")
         self.date_month_var.set("")
         self.date_day_var.set("")
+
+        for key in self.inspection_vars:
+            self.inspection_vars[key].set(False)
+        self.inspection_other_var.set(False)
+        self.inspection_other_description_var.set("")
+        self.inspection_other_time_frame_var.set("")
+        self.inspection_order = []
 
         self.waivers_required_var.set("")
         self.building_code_clause_var.set("")
