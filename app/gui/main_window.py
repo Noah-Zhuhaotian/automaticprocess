@@ -1,8 +1,10 @@
 """Main application window: a step-by-step wizard.
 
 Steps:
-0. Settings (drive paths) - only shown on first run, i.e. when the three
-   drive paths haven't been configured yet. Skipped on subsequent runs.
+0. Settings (drive paths + MinuteDock token) - only shown on first run,
+   i.e. when the three drive paths and/or the MinuteDock token haven't
+   been configured yet. Skipped on subsequent runs. Both are required -
+   the wizard can't proceed to General until all four are set.
 1. General - job number, client info, street/suburb/town, scope, role.
 2. PS1 Input - council, description of work, scope of statement,
    construction-monitoring level, basis of statement, date.
@@ -11,18 +13,19 @@ Steps:
 4. Waivers and Modifications - the LBP form's YES/NO waiver section.
 5. Specification - pick which Specifications.docx sections apply.
 6. B2 Letter - which material rows apply.
-7. MinuteDock - only shown when a MinuteDock Personal Access Token is
-   configured in Settings; billable/rate settings for the MinuteDock
-   Project this job will sync to.
+7. MinuteDock - rate settings for the MinuteDock Project this job will
+   sync to (every project is created billable=True, not user-facing - see
+   minutedock_step.py). Always shown - MinuteDock sync is a required part
+   of Create, not optional.
 8. Review & Create - single Create button that generates everything:
-   project folders, the Word documents, and (if a token is configured) the
-   matching MinuteDock Contact/Project.
+   project folders, the Word documents, and the matching MinuteDock
+   Contact/Project.
 
 There's no separate "submit to MinuteDock" step or button: it reuses data
 already collected earlier in the wizard and rides along inside the same
-Create action (app/core/web_filler.py) - only the billable/rate *input*
-(step 7 above) gets its own step, since that's project-specific data
-nothing else in the wizard collects.
+Create action (app/core/web_filler.py) - only the rate *input* (step 7
+above) gets its own step, since that's project-specific data nothing else
+in the wizard collects.
 
 Each step's fields, build/validate logic, and per-step tk variables live
 in their own mixin under app/gui/steps/ - this class just composes them
@@ -112,7 +115,7 @@ class MainWindow(
     # ---------- step list / navigation ----------
     def _build_step_list(self) -> list[dict[str, Any]]:
         steps: list[dict[str, Any]] = []
-        if not self._drives_configured():
+        if not self._settings_configured():
             steps.append(
                 {"title": "Settings", "build": self._build_settings_step, "validate": self._validate_settings_step}
             )
@@ -142,14 +145,13 @@ class MainWindow(
         steps.append(
             {"title": "B2 Letter", "build": self._build_b2_letter_step, "validate": self._validate_b2_letter_step}
         )
-        if self.settings.get("minutedock_access_token", "").strip():
-            steps.append(
-                {
-                    "title": "MinuteDock",
-                    "build": self._build_minutedock_step,
-                    "validate": self._validate_minutedock_step,
-                }
-            )
+        steps.append(
+            {
+                "title": "MinuteDock",
+                "build": self._build_minutedock_step,
+                "validate": self._validate_minutedock_step,
+            }
+        )
         steps.append({"title": "Review & Create", "build": self._build_review_step, "validate": None})
         return steps
 

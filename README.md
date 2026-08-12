@@ -13,9 +13,9 @@ info once, then a single **Create** click:
    Word checkboxes, inserting genuine bulleted lists (not typed
    look-alikes), and letting the user pick which sections/rows of the
    longer documents apply to this project
-3. If a MinuteDock Personal Access Token is configured, syncs the
-   matching Contact and Project to [MinuteDock](https://minutedock.com)
-   via its REST API
+3. Syncs the matching Contact and Project to
+   [MinuteDock](https://minutedock.com) via its REST API — the token is
+   required during Settings, so this always runs
 
 While Create runs, a "please wait" progress dialog with an indeterminate
 bar shows the app is working rather than appearing to hang — the actual
@@ -31,18 +31,19 @@ each field means, where to get a MinuteDock token) live in
 
 ## Wizard steps
 
-**Settings** (drive paths — shown only on first run, i.e. while any of
-the three drive paths is unconfigured; reachable afterwards via the
-**Settings** button) → **General** (job number, client, street/suburb/
-town, scope, role) → **PS1 Input** (council, descriptions, PS1
-checkboxes/dates) → **Inspection Schedule** (PS1's Schedule of
-Inspections table — pick which typical items apply, add any number of
-free-text "Other" items, order everything) → **Waivers and
-Modifications** (LBP form's YES/NO waiver section) → **Specification**
-(pick which of Specifications.docx's 7 sections apply) → **B2 Letter**
-(pick which material rows apply) → **MinuteDock** (billable/rate —
-only shown when a token is configured in Settings) → **Review &
-Create**.
+**Settings** (drive paths + MinuteDock token — shown only on first run,
+i.e. while any of the three drive paths or the token is unconfigured;
+reachable afterwards via the **Settings** button) → **General** (job
+number, client, street/suburb/town, scope, role) → **PS1 Input**
+(council, descriptions, PS1 checkboxes/dates) → **Inspection Schedule**
+(PS1's Schedule of Inspections table — pick which typical items apply,
+add any number of free-text "Other" items, order everything) → **Waivers
+and Modifications** (LBP form's YES/NO waiver section) →
+**Specification** (pick which of Specifications.docx's 7 sections apply)
+→ **B2 Letter** (pick which material rows apply) → **MinuteDock**
+(rate — always shown, sync is required; every project is created
+billable=True with no user-facing toggle, since unchecking it on
+MinuteDock's own side blocks time entries) → **Review & Create**.
 
 ## Project structure
 
@@ -120,8 +121,9 @@ the rest of each document's formatting is left completely untouched.
 
 ## MinuteDock sync (`app/core/minutedock_client.py`, `app/core/web_filler.py`)
 
-Optional - only runs when a MinuteDock Personal Access Token is
-configured in Settings. Authenticates as `Authorization: Bearer <token>`
+Required - the token must be configured in Settings before the wizard
+lets you past it, so this always runs on Create. Authenticates as
+`Authorization: Bearer <token>`
 against `https://minutedock.com/api/v1`. `find_or_create_contact`/
 `find_or_create_project` are genuinely find-or-create (exact,
 case-insensitive name match, not substring) so re-running Create for the

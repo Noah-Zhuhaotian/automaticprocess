@@ -23,7 +23,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "drafting_drive": "",
     "admin_drive": "",
     "word_template": "",     # Step 2: Word template file path
-    "minutedock_access_token": "",  # Step 3: MinuteDock Personal Access Token (optional - Step 3 is skipped without it)
+    "minutedock_access_token": "",  # Step 3: MinuteDock Personal Access Token (required, set during Settings)
     "council_names": [],     # user-maintained list, e.g. for the PS1 Input step
 }
 

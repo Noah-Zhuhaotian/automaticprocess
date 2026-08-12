@@ -57,12 +57,69 @@ freezing the window - see that commit's own section below for detail),
 `b511755` (PS1 Input left-edge alignment polish), `76fe6ef` (added
 USER_GUIDE.md, a non-technical user guide), `180dbb9` (README brought up
 to date with Inspection Schedule/MinuteDock/packaging, which it hadn't
-mentioned before).
+mentioned before), `09cfacc` (fixed MinuteDock's Project Name/Short Code
+being smashed into one string - see that commit's own section below for
+detail).
 
-*This* handoff is **not yet committed** - MinuteDock's Project Name/Short
-Code were being smashed into one string instead of using both fields as
-intended. `app/core/minutedock_client.py`, `app/core/web_filler.py`, and
-`app/gui/steps/review_step.py` are modified in the working tree:
+*This* handoff is **not yet committed** - MinuteDock sync and its
+"Project is billable" setting both went from optional/user-choice to
+required/fixed, on the user's own explicit request after using the app
+for real. `app/config/settings.py`, `app/gui/main_window.py`,
+`app/gui/steps/minutedock_step.py`, `app/gui/steps/review_step.py`,
+`app/gui/steps/settings_step.py`, `README.md`, and `USER_GUIDE.md` are
+modified in the working tree:
+
+1. **MinuteDock sync is no longer optional.** Previously the MinuteDock
+   Personal Access Token was an optional Settings field, and the
+   "MinuteDock" wizard step (plus the sync call itself) only appeared/ran
+   when a token was configured - the user wants MinuteDock sync to happen
+   on every single Create, with no way to skip it. `SettingsStepMixin`
+   gained `_settings_configured()` (replacing `_drives_configured()`),
+   which now also requires the token, and both the first-run Settings step
+   and the always-reachable Settings dialog block **Save** until all four
+   fields (three drives + token) are filled in - the first-run step gained
+   the token field + Test connection button it was previously missing (only
+   the dialog had it). `main_window.py`'s `_build_step_list()` now appends
+   the "MinuteDock" step unconditionally instead of gating it on
+   `self.settings.get("minutedock_access_token", "")`.
+   `review_step.py`'s `_on_create` correspondingly always builds
+   `minutedock_args` and always calls `web_filler.sync_to_minutedock` -
+   the `if token:` / `if minutedock_args:` guards are gone. Verified
+   headlessly: an unconfigured settings dict blocks `_save_settings()`
+   until the token is filled in too, and the rebuilt step list is exactly
+   `General → ... → MinuteDock → Review & Create` with `Settings` gone
+   once configured - see "What Worked".
+2. **"Project is billable" is no longer a user-facing checkbox - every
+   project is created billable=True, unconditionally.** The user found,
+   using a real MinuteDock account, that unchecking "Project is billable"
+   on MinuteDock's own web UI stops that project from accepting *any* time
+   entries at all - not just "won't be invoiced," but time tracking
+   against it breaks outright. Since the wizard's checkbox defaulted to
+   checked anyway, exposing it as a toggle only gave the user a way to
+   accidentally break time tracking for a project with no warning until
+   someone tried to log hours against it later. Removed
+   `minutedock_billable_var` entirely (was a `tk.BooleanVar` plus its
+   `ttk.Checkbutton` in `minutedock_step.py`, and a reset line in
+   `review_step.py`'s `_reset_for_new_project()`); `review_step.py` now
+   sends `"billable": True` as a literal in `minutedock_args`, not read
+   from a var. The MinuteDock step's two rate-mode radio buttons (`Use
+   contact rates` / `Set a standard rate for this project`) are unchanged
+   otherwise, just shifted up one grid row to fill the gap. Verified
+   headlessly: `hasattr(app, "minutedock_billable_var")` is now `False`,
+   and walking the step's widget tree after building it finds no widget
+   with the text "Project is billable" anywhere.
+3. **Docs updated to match** (`README.md`, `USER_GUIDE.md`) - both no
+   longer describe MinuteDock sync or the billable setting as optional/
+   toggleable; `USER_GUIDE.md`'s FAQ entry "Why isn't the MinuteDock step
+   showing up?" (no longer a possible situation - it always shows now)
+   was replaced with "Why won't Settings let me past it?", covering the
+   token now being one of the required fields alongside the three drives.
+
+Previous handoff's own changes (historical record, already pushed as
+`09cfacc`) - MinuteDock's Project Name/Short Code were being smashed into
+one string instead of using both fields as intended.
+`app/core/minutedock_client.py`, `app/core/web_filler.py`, and
+`app/gui/steps/review_step.py` were modified by that commit:
 
 1. **The user noticed it on MinuteDock's own web UI**: a screenshot
    showed a Project with Name `"23432 - 217 Armagh Street"` and Short
@@ -490,7 +547,9 @@ MinuteDock API this handoff; the success path (an actual Contact/Project
 getting created/matched) has only been read-verified in code, not run
 against a real account, since no real MinuteDock token was available while
 building this - **still needs the user to run it once for real with their
-own token** before considering it fully done.
+own token** before considering it fully done. As of this handoff,
+MinuteDock sync (and the drive paths) are required, not optional - see
+the working-tree entry near the top of this file.
 
 ### Project structure
 
@@ -582,11 +641,14 @@ below now lives in its own `steps/*_step.py` mixin - see "GUI module
 layout" above:
 
 1. **Settings** — only included in the step list if any of the three
-   drive paths (`engineer_drive`/`drafting_drive`/`admin_drive`) is
-   unconfigured at launch. Always reachable afterwards via the **"File
-   path"** button (top-right of the header row — deliberately a plain
-   `ttk.Button`, *not* a native OS menu bar; a menu bar was tried first
-   and looked like an unclickable white strip on the user's machine).
+   drive paths (`engineer_drive`/`drafting_drive`/`admin_drive`) *or* the
+   MinuteDock token is unconfigured at launch (`_settings_configured()`,
+   this handoff — all four are now required, not just the drives; see the
+   working-tree entry near the top of this file). Always reachable
+   afterwards via the **"Settings"** button (top-right of the header row —
+   deliberately a plain `ttk.Button`, *not* a native OS menu bar; a menu
+   bar was tried first and looked like an unclickable white strip on the
+   user's machine).
 2. **General** — Job number, Client info, **Street / Suburb / Town**
    (three separate required fields as of this handoff — previously one
    combined "Address" field; see "Address split" below), Scope
@@ -670,24 +732,27 @@ layout" above:
    *content* is fixed (the user said so explicitly - "内容不用变"); this
    step only toggles which rows appear. See "Word filling" for the
    removal mechanism.
-8. **MinuteDock** (this handoff) — only appears in `self.steps` when a
-   MinuteDock Personal Access Token is configured in Settings
-   (`_build_step_list()`'s conditional append, same precedent as the
-   first-run-only Settings step); invisible/skippable otherwise. A
-   "Project is billable" checkbutton plus a "Use contact rates"/"Set a
-   standard rate for this project" radio gating a `$/hour` entry (same
-   gating idiom as Waivers/Specification). Mirrors MinuteDock's own "New
-   Project" web page, which the user screenshotted while requesting this
-   feature. See "Feature 3: MinuteDock sync" below for what this data
-   actually drives.
+8. **MinuteDock** — always appears in `self.steps` now (a previous
+   handoff's conditional append on a configured token is gone - see the
+   working-tree entry near the top of this file; MinuteDock sync is
+   required, not optional, so its step can't be skipped either). A "Use
+   contact rates"/"Set a standard rate for this project" radio gating a
+   `$/hour` entry (same gating idiom as Waivers/Specification). No
+   "Project is billable" toggle (this handoff removed it - every project
+   is created billable=True unconditionally, since unchecking it on
+   MinuteDock's own web UI stops time entries from being logged against
+   that project at all, confirmed by the user against a real account).
+   The rate controls mirror MinuteDock's own "New Project" web page, which
+   the user screenshotted while requesting this feature originally. See
+   "Feature 3: MinuteDock sync" below for what this data actually drives.
 9. **Review & Create** — the Next button becomes "Create" on the last
    step. Runs `folder_creator.create_project_folders`, then
    `word_filler.fill_docx_template` for each of the **six** templates
    (Project register, PS1, LBP form, Calculation Statement,
    Specifications, B2 Letter — skipped individually if its template file
-   is missing), then (this handoff) `web_filler.sync_to_minutedock` if a
-   token is configured (see "Feature 3: MinuteDock sync"), then shows a
-   success dialog (see "Success dialog"
+   is missing), then `web_filler.sync_to_minutedock` unconditionally (this
+   handoff - previously only if a token happened to be configured; see
+   "Feature 3: MinuteDock sync"), then shows a success dialog (see "Success dialog"
    below), then calls `_reset_for_new_project()` which blanks every
    *project* field (job number, street/suburb/town, scope, PS1 fields,
    inspection schedule selections/order, waivers fields,
@@ -1110,13 +1175,13 @@ JSON in/out, error handling only); `web_filler.py`'s `sync_to_minutedock()`
 is the business logic on top of it (what to find-or-create, in what
 order). Authenticates with a **Personal Access Token** the user generates
 once from their own MinuteDock profile ("Manage Access Tokens") and pastes
-into the Settings dialog - sent as `Authorization: Bearer <token>` on
-every request. `_on_create` in `review_step.py` only attempts this *after*
-folders and all six Word documents already succeeded, and only if a token
-is configured in `self.settings` - entirely skipped otherwise (no token
-field left empty means Step 3 just silently doesn't run, same "skip if not
-configured/present" idea as a missing template file in the documents
-loop).
+into Settings - sent as `Authorization: Bearer <token>` on every request.
+`_on_create` in `review_step.py` attempts this *after* folders and all six
+Word documents already succeeded, unconditionally - the token is a
+required Settings field (see the working-tree entry near the top of this
+file), so by the time this step is reachable at all one is guaranteed to
+be present; there's no longer a skip-if-not-configured branch here (there
+was, before this handoff).
 
 **Find-or-create, not create-only**, for both the Contact and the
 Project - `find_or_create_contact`/`find_or_create_project` each do a
@@ -1134,8 +1199,8 @@ step's `client_info_var` (free text, already existed - no new field
 needed).
 
 **Project** matches on `short_code`, *not* `name` (fixed after a
-follow-up bug report - see the working-tree entry near the top of this
-file for the full story): `name` = street only, `short_code` = job
+follow-up bug report - see `09cfacc`'s own section above for the full
+story): `name` = street only, `short_code` = job
 number only - previously both were smashed into one combined string
 (`folder_creator.build_project_folder_name(job_number, street)`,
 e.g. `"1234 - 211 Ferry Rd"`) sent only as `name`, with nothing ever sent
@@ -1150,10 +1215,13 @@ used as-is for the actual folder name and the Word `{{address}}` token,
 which legitimately do want the combined form - only the MinuteDock call
 site changed.
 
-**Billable/rate** come from the MinuteDock wizard step (see "GUI: wizard
-steps" above); `default_rate_dollars` is only sent when the user picked
-"Set a standard rate" - never sent when they picked "Use contact rates",
-so MinuteDock's own contact-level default isn't overridden by accident.
+**Billable is always `True`, not user-facing** (this handoff - see the
+working-tree entry near the top of this file for why). **Rate** comes
+from the MinuteDock wizard step's two remaining controls (see "GUI:
+wizard steps" above); `standard_rate_dollars` is only sent when the user
+picked "Set a standard rate" - never sent when they picked "Use contact
+rates", so MinuteDock's own contact-level default isn't overridden by
+accident.
 
 **No pagination** for `GET /contacts`/`GET /projects` in this version - a
 single small engineering firm's account is assumed to fit in the API's
@@ -1845,3 +1913,31 @@ themselves (see "Next Steps").
    walkthrough scripts written this handoff would be a reasonable
    starting point to adapt into actual test cases, if the user wants
    that investment.
+6. **This handoff's required-Settings/no-billable-toggle changes are only
+   verified headlessly, not clicked through.** Confirmed programmatically:
+   `_save_settings()` refuses to save with the token blank, the rebuilt
+   step list always includes "MinuteDock" once configured, and the
+   MinuteDock step's widget tree has no "Project is billable" control
+   anywhere. **Not yet confirmed in a real running window**: that the
+   first-run Settings step's new token field/Test connection button look
+   right laid out under the three drive rows, that trying to click past an
+   incomplete Settings step shows a sensible error (not just that the
+   function returns `False`), and a full real Create against a real
+   MinuteDock account with a project actually coming through billable with
+   no way to have set it otherwise. Also: `build_scripts/output/`'s
+   installer/zip/PDF were rebuilt from this handoff's code (see the
+   working-tree entry near the top of this file) but not reinstalled/
+   re-run by a human this session - same standing item as #4 above,
+   worth combining into one real end-to-end pass rather than two separate
+   ones.
+7. **No script in the repo reproduces `build_scripts/output/USER_GUIDE.pdf`
+   from `USER_GUIDE.md`** - it was regenerated this handoff by converting
+   the Markdown to styled HTML (`python-markdown`) and printing that to
+   PDF with a headless `msedge.exe --print-to-pdf`, run ad hoc through the
+   Bash tool, the same way the previous session that first produced this
+   PDF apparently did (no record of *that* process either - the file
+   simply existed, gitignored, with no generating script committed
+   anywhere). If this PDF needs regenerating again on a regular basis (not
+   just after occasional `USER_GUIDE.md` edits), worth turning that ad hoc
+   conversion into a real `build_scripts/make_user_guide_pdf.py` so it's
+   reproducible instead of re-improvised each time.

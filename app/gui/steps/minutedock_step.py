@@ -1,9 +1,14 @@
-"""Step: MinuteDock - per-project billing settings synced to MinuteDock
+"""Step: MinuteDock - per-project rate settings synced to MinuteDock
 (https://minutedock.com) alongside the Word documents on Create.
 
-Only shown when a MinuteDock Personal Access Token is configured in
-Settings - see main_window.py's _build_step_list. The token itself is
-machine/app config, not project data, so it lives in Settings, not here.
+Always shown - MinuteDock sync is a required part of Create, not
+optional. The Personal Access Token itself is machine/app config, not
+project data, so it lives in Settings, not here (and Settings requires it
+before the wizard can proceed past Settings at all).
+
+Every project is created billable=True, with no user-facing toggle -
+unchecking it stops MinuteDock's own web UI from accepting time entries
+against that project at all, so it's not a real per-project choice.
 """
 
 from __future__ import annotations
@@ -16,7 +21,6 @@ RATE_MODE_OPTIONS = [("contact", "Use contact rates"), ("standard", "Set a stand
 
 class MinuteDockStepMixin:
     def _init_minutedock_vars(self) -> None:
-        self.minutedock_billable_var = tk.BooleanVar(value=True)
         self.minutedock_rate_mode_var = tk.StringVar(value="contact")
         self.minutedock_standard_rate_var = tk.StringVar()
         self._minutedock_rate_widget: ttk.Entry | None = None
@@ -33,11 +37,12 @@ class MinuteDockStepMixin:
             justify="left",
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
-        ttk.Checkbutton(
-            frame, text="Project is billable", variable=self.minutedock_billable_var
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=4)
-
-        for row, (value, label) in enumerate(RATE_MODE_OPTIONS, start=2):
+        # No "Project is billable" toggle here - every project is created
+        # billable=True. Unchecking it stops MinuteDock's own UI from
+        # accepting time entries against that project at all (confirmed by
+        # the user against a real account), so exposing it as a choice would
+        # just be a way to break time tracking for that project later.
+        for row, (value, label) in enumerate(RATE_MODE_OPTIONS, start=1):
             ttk.Radiobutton(
                 frame,
                 text=label,
@@ -46,7 +51,7 @@ class MinuteDockStepMixin:
                 command=self._on_minutedock_rate_mode_change,
             ).grid(row=row, column=0, columnspan=2, sticky="w", pady=2)
 
-        rate_row = 2 + len(RATE_MODE_OPTIONS)
+        rate_row = 1 + len(RATE_MODE_OPTIONS)
         ttk.Label(frame, text="Standard rate ($/hour):").grid(row=rate_row, column=0, sticky="w", pady=(4, 4), padx=(20, 0))
         self._minutedock_rate_widget = ttk.Entry(frame, textvariable=self.minutedock_standard_rate_var, width=12)
         self._minutedock_rate_widget.grid(row=rate_row, column=1, sticky="w", pady=(4, 4), padx=8)

@@ -1,10 +1,12 @@
 """Step: Settings - drive paths (Engineer/Drafting/Admin) plus the
-MinuteDock Personal Access Token.
+MinuteDock Personal Access Token. Both are required - the app can't create
+a project without the drives, and MinuteDock sync is a mandatory part of
+Create now, not an optional add-on.
 
-The first-run step (_build_settings_step) only covers drive paths and is
-only shown in the step list when any of the three paths is still
-unconfigured; the dialog (_open_settings_dialog, always reachable via the
-header's "Settings" button) covers both drives and the MinuteDock token.
+The first-run step (_build_settings_step) covers drives and the token and
+is only shown in the step list when any of them is still unconfigured; the
+dialog (_open_settings_dialog, always reachable via the header's
+"Settings" button) covers the same fields for changing them later.
 """
 
 from __future__ import annotations
@@ -25,8 +27,10 @@ class SettingsStepMixin:
         self.admin_drive_var = tk.StringVar(value=self.settings.get("admin_drive", ""))
         self.minutedock_token_var = tk.StringVar(value=self.settings.get("minutedock_access_token", ""))
 
-    def _drives_configured(self) -> bool:
-        return all(self.settings.get(key, "").strip() for key in DRIVE_KEYS)
+    def _settings_configured(self) -> bool:
+        return all(self.settings.get(key, "").strip() for key in DRIVE_KEYS) and bool(
+            self.settings.get("minutedock_access_token", "").strip()
+        )
 
     def _open_settings_dialog(self) -> None:
         dialog = tk.Toplevel(self)
@@ -61,9 +65,8 @@ class SettingsStepMixin:
         ttk.Label(
             dialog,
             text=(
-                "MinuteDock Personal Access Token (optional). Generate one from your "
-                "MinuteDock profile → Manage Access Tokens. Leave blank to skip "
-                "MinuteDock sync entirely."
+                "MinuteDock Personal Access Token (required). Generate one from your "
+                "MinuteDock profile → Manage Access Tokens."
             ),
             wraplength=420,
             justify="left",
@@ -79,7 +82,7 @@ class SettingsStepMixin:
         )
 
         def on_save() -> None:
-            if self._save_drive_settings():
+            if self._save_settings():
                 dialog.destroy()
                 self._update_availability_status()
                 self._refresh_step_list_preserving_position()
@@ -90,14 +93,16 @@ class SettingsStepMixin:
 
     def _refresh_step_list_preserving_position(self) -> None:
         """Rebuild self.steps after Settings changes something that affects
-        _build_step_list() (currently: the MinuteDock token appearing/
-        disappearing) - self.steps is otherwise only ever rebuilt in
+        _build_step_list() (currently: whether the first-run "Settings" step
+        is still needed, i.e. _settings_configured() flipping from False to
+        True) - self.steps is otherwise only ever rebuilt in
         _reset_for_new_project(), which runs after a full successful Create,
-        not right after Settings is saved. Without this, a token saved
-        mid-session wouldn't add the MinuteDock step until the app was
-        restarted, since the dialog can be opened from any step (not just a
-        first-run flow that always lands back on General), stay on the same
-        *named* step across the rebuild rather than assuming an index.
+        not right after Settings is saved. Without this, completing Settings
+        mid-session (the dialog can be opened from any step, not just a
+        first-run flow that always lands back on General) wouldn't drop the
+        "Settings" step from the list until the app was restarted - stay on
+        the same *named* step across the rebuild rather than assuming an
+        index.
         """
         current_title = self.steps[self.current_step]["title"]
         self.steps = self._build_step_list()
@@ -146,25 +151,50 @@ class SettingsStepMixin:
                 row=row, column=2, pady=4
             )
 
+        token_row = len(drive_rows) + 1
+        ttk.Separator(parent, orient="horizontal").grid(
+            row=token_row, column=0, columnspan=3, sticky="ew", pady=(8, 8)
+        )
+        ttk.Label(
+            parent,
+            text=(
+                "MinuteDock Personal Access Token (required). Generate one from your "
+                "MinuteDock profile → Manage Access Tokens."
+            ),
+            wraplength=560,
+            justify="left",
+        ).grid(row=token_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        ttk.Label(parent, text="MinuteDock token:").grid(row=token_row + 2, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.minutedock_token_var, width=45, show="*").grid(
+            row=token_row + 2, column=1, pady=4, padx=8
+        )
+        ttk.Button(parent, text="Test connection", command=self._test_minutedock_connection).grid(
+            row=token_row + 2, column=2, pady=4
+        )
+
     def _browse_folder(self, var: tk.StringVar) -> None:
         path = filedialog.askdirectory(initialdir=var.get() or None)
         if path:
             var.set(path)
 
-    def _save_drive_settings(self) -> bool:
+    def _save_settings(self) -> bool:
         engineer = self.engineer_drive_var.get().strip()
         drafting = self.drafting_drive_var.get().strip()
         admin = self.admin_drive_var.get().strip()
+        token = self.minutedock_token_var.get().strip()
         if not (engineer and drafting and admin):
             messagebox.showerror("Missing info", "All three drive paths are required.")
+            return False
+        if not token:
+            messagebox.showerror("Missing info", "A MinuteDock Personal Access Token is required.")
             return False
 
         self.settings["engineer_drive"] = engineer
         self.settings["drafting_drive"] = drafting
         self.settings["admin_drive"] = admin
-        self.settings["minutedock_access_token"] = self.minutedock_token_var.get().strip()
+        self.settings["minutedock_access_token"] = token
         save_settings(self.settings)
         return True
 
     def _validate_settings_step(self) -> bool:
-        return self._save_drive_settings()
+        return self._save_settings()

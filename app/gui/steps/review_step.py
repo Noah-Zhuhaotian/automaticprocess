@@ -49,8 +49,7 @@ class ReviewStepMixin:
                 "Click Create to generate everything for this project: folders on "
                 "the Engineer/Drafting/Admin drives, the Project register, PS1, "
                 "LBP form, Calculation Statement, Specifications, and B2 Letter "
-                "documents, and (if a MinuteDock token is configured in Settings) "
-                "the matching MinuteDock Contact/Project."
+                "documents, and the matching MinuteDock Contact/Project."
             ),
             wraplength=560,
             justify="left",
@@ -274,24 +273,25 @@ class ReviewStepMixin:
             },
         ]
 
-        minutedock_args = None
-        token = self.settings.get("minutedock_access_token", "").strip()
-        if token:
-            minutedock_args = {
-                "access_token": token,
-                "client_name": replacements["client_info"],
-                # MinuteDock's Project Name is the street only; the job
-                # number goes in its own Short Code field below, not smashed
-                # together into one string (see minutedock_client.py).
-                "project_name": replacements["street"],
-                "project_short_code": replacements["job_number"],
-                "billable": self.minutedock_billable_var.get(),
-                "standard_rate_dollars": (
-                    self.minutedock_standard_rate_var.get().strip()
-                    if self.minutedock_rate_mode_var.get() == "standard"
-                    else None
-                ),
-            }
+        # MinuteDock sync is a required part of Create - Settings validation
+        # guarantees a token is present by the time this step is reachable.
+        minutedock_args = {
+            "access_token": self.settings.get("minutedock_access_token", "").strip(),
+            "client_name": replacements["client_info"],
+            # MinuteDock's Project Name is the street only; the job
+            # number goes in its own Short Code field below, not smashed
+            # together into one string (see minutedock_client.py).
+            "project_name": replacements["street"],
+            "project_short_code": replacements["job_number"],
+            # Always billable - see minutedock_step.py for why this isn't a
+            # user-facing toggle.
+            "billable": True,
+            "standard_rate_dollars": (
+                self.minutedock_standard_rate_var.get().strip()
+                if self.minutedock_rate_mode_var.get() == "standard"
+                else None
+            ),
+        }
 
         job = {
             "job_number": self.job_number_var.get(),
@@ -386,24 +386,22 @@ class ReviewStepMixin:
                 )
                 return
 
-        minutedock_args = job["minutedock"]
-        if minutedock_args:
-            try:
-                result = web_filler.sync_to_minutedock(**minutedock_args)
-                summary += (
-                    f"\nMinuteDock: contact '{result['contact']['name']}', "
-                    f"project '{result['project']['name']}'"
-                )
-            except MinuteDockError as exc:
-                logger.exception("Failed to sync to MinuteDock")
-                self._create_result_queue.put(
-                    {
-                        "kind": "partial",
-                        "summary": summary,
-                        "message": f"Folders and documents were created, but MinuteDock sync failed:\n{exc}",
-                    }
-                )
-                return
+        try:
+            result = web_filler.sync_to_minutedock(**job["minutedock"])
+            summary += (
+                f"\nMinuteDock: contact '{result['contact']['name']}', "
+                f"project '{result['project']['name']}'"
+            )
+        except MinuteDockError as exc:
+            logger.exception("Failed to sync to MinuteDock")
+            self._create_result_queue.put(
+                {
+                    "kind": "partial",
+                    "summary": summary,
+                    "message": f"Folders and documents were created, but MinuteDock sync failed:\n{exc}",
+                }
+            )
+            return
 
         self._create_result_queue.put({"kind": "success", "summary": summary})
 
@@ -557,16 +555,15 @@ class ReviewStepMixin:
         for material in B2_LETTER_MATERIALS:
             self.b2_letter_material_vars[material].set(False)
 
-        self.minutedock_billable_var.set(True)
         self.minutedock_rate_mode_var.set("contact")
         self.minutedock_standard_rate_var.set("")
 
         # Rebuild the step list: if this was the first run, Settings just
         # got filled in and saved during this very session, but self.steps
         # was only computed once at startup and still includes it. Without
-        # this, General would keep showing as "2 of 7" (with Settings) for
-        # the rest of the session instead of "1 of 6" like a fresh restart
-        # (where _drives_configured() is already true) would show.
+        # this, General would keep showing as "2 of 9" (with Settings) for
+        # the rest of the session instead of "1 of 8" like a fresh restart
+        # (where _settings_configured() is already true) would show.
         self.steps = self._build_step_list()
         general_index = next(i for i, s in enumerate(self.steps) if s["title"] == "General")
         self.current_step = general_index

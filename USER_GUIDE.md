@@ -8,9 +8,9 @@ A few clicks and one form, and it automatically handles three things:
 
 1. **Create folders** - automatically creates a project folder on the Engineer, Drafting, and Admin drives, named from the job number and address (the Engineer drive also gets 6 fixed subfolders created automatically).
 2. **Fill Word documents** - automatically generates six documents (Project register, PS1, LBP form, Calculation Statement, Specifications, B2 Letter), filled in with the information you entered.
-3. **Sync to MinuteDock** (optional) - if a MinuteDock access token is configured, creating a project also automatically creates the matching Contact and Project on MinuteDock.
+3. **Sync to MinuteDock** - creating a project also automatically creates the matching Contact and Project on MinuteDock.
 
-The third item is optional - not configuring it doesn't affect the first two at all.
+All three happen together on every Create - a MinuteDock access token must be set up in Settings before you can use the app at all (see below).
 
 ## Installing
 
@@ -30,9 +30,9 @@ The first time you open the app, there's a **Settings** button in the top-right 
 - **Engineer drive**, **Drafting drive**, **Admin drive**: enter the path to each of these three drives on the NAS (or later, a synced OneDrive/SharePoint folder if you switch). Click the **Browse...** button next to each one to pick the folder instead of typing the path by hand.
 - All three need to be filled in before clicking **Save** takes effect. You only need to set these once - they'll be remembered for every project after that.
 
-### MinuteDock access token (optional)
+### MinuteDock access token (required)
 
-Only fill this in if you want the "sync to MinuteDock" feature. If you don't need it, just leave it blank and skip this section.
+The app syncs every project to MinuteDock automatically, so this token is required - **Save** won't take effect until it's filled in, alongside the three drive paths above.
 
 **How to get this token:**
 
@@ -45,7 +45,7 @@ Only fill this in if you want the "sync to MinuteDock" feature. If you don't nee
 7. Click the **Test connection** button next to it - if you see a "connection successful" message with your account name, it's entered correctly.
 8. Click **Save**.
 
-Once saved successfully, a new **MinuteDock** step will appear while filling in project details, where you set how this project should be billed on MinuteDock (see below).
+The **MinuteDock** step (where you set how this project should be billed on MinuteDock, see below) appears while filling in project details every time - this token is required to move past Settings at all.
 
 Treat this token like a password - don't share it with anyone who doesn't need it. If you think it's been compromised, go back to the Manage Access Tokens page on MinuteDock, delete the old one, and create a new one.
 
@@ -100,9 +100,10 @@ This step corresponds to the "Schedule 3 - Schedule of Inspections" table in the
 
 - Tick whichever materials apply (Reinforced concrete / Structural timber / Mild steel structure) - at least one must be ticked. Whichever you tick, the matching row stays in the B2 Letter document's compliance table; unticked ones are removed. The row content itself is fixed - this step only decides which rows appear.
 
-### MinuteDock (only appears if a token is configured)
+### MinuteDock (always appears)
 
-- **Project is billable**: whether this project should be billable - ticked by default.
+Every project is created as billable on MinuteDock automatically - there's no toggle for this, since unchecking it on MinuteDock's own side stops time entries from being logged against that project at all.
+
 - Choose one billing method:
   - **Use contact rates**: uses whatever default rate is already set for this client in MinuteDock.
   - **Set a standard rate for this project**: sets a fixed hourly rate just for this project - only when this is chosen do you need to fill in the rate below it.
@@ -113,7 +114,7 @@ The final step - the button changes to **Create**. Clicking it makes the softwar
 
 1. Create the project folders on all three drives.
 2. Generate the six Word documents.
-3. If a MinuteDock token is configured, sync the matching Contact and Project.
+3. Sync the matching Contact and Project to MinuteDock.
 
 While this runs, a small "Creating project, please wait..." window with a moving progress bar will appear - this is completely normal and means the software is working in the background, not stuck. It usually takes a few seconds to around ten seconds depending on the number of documents and network conditions; the window being temporarily unresponsive during this time is expected.
 
@@ -126,8 +127,8 @@ Once everything succeeds, a green checkmark "Done" message appears - click OK to
 **Q: What does "Already exists on: ..." on the General step mean?**
 It means a project folder for this Job number + Street combination has already been created on one of the drives. Change the Job number or Street to continue - this exists to prevent two different projects from overwriting the same folder name.
 
-**Q: Why isn't the MinuteDock step showing up?**
-The MinuteDock token in Settings either hasn't been filled in yet, or was filled in but never confirmed with Test connection/Save. Go back to Settings and check.
+**Q: Why won't Settings let me past it?**
+All three drive paths and the MinuteDock token are required - **Save** won't take effect until every one of them is filled in. Use **Test connection** to confirm the token itself is correct.
 
 **Q: The Council name dropdown is empty and won't open?**
 That means no council names have been added yet - click **Add Council...** to add the first one.
