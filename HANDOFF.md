@@ -48,14 +48,85 @@ make room for later handoffs' own work, which builds directly on it),
 `f538915` (unlimited Inspection Schedule "Other" items; Specification's
 Grout field became a 3-option dropdown; B2 Letter's user-added
 street/suburb/town tokens fixed via a general run-boundary-splitting fix
-in `word_filler.py` - see that commit's own section below for detail).
+in `word_filler.py` - see that commit's own section below for detail),
+`b004dbf` (MinuteDock API sync implemented as Feature 3; packaged the app
+as a real Windows installer via PyInstaller + Inno Setup - see that
+commit's own section below for detail).
 
-*This* handoff is **not yet committed** - MinuteDock API sync (Feature 3):
+*This* handoff is **not yet committed** - `_on_create` now runs in a
+background thread with a "please wait" progress dialog, instead of
+freezing the window for the whole operation. `app/gui/steps/review_step.py`
+is the only file changed:
+
+1. **The user noticed Create has a real wait (folder creation, six Word
+   documents, and - if MinuteDock is configured - a network round trip)
+   with zero feedback, and asked for something to show it's working, not
+   stuck.** Root cause: `_on_create` ran entirely on the main/UI thread,
+   so tkinter couldn't repaint or process any events for the whole
+   duration - genuinely indistinguishable from a hang, especially once the
+   MinuteDock network call could add a few seconds of pure network
+   latency on top of the file I/O.
+2. **Split into three pieces**, since tkinter itself is not thread-safe
+   (only the main thread may touch widgets/variables): `_on_create`
+   (main thread) gathers everything the work needs from tkinter
+   variables into a plain-data `job` dict (this must happen before the
+   background thread starts - reading a `tk.StringVar` from a
+   non-main thread isn't safe either), starts a `threading.Thread`
+   running `_run_create_job(job)`, and starts a polling loop
+   (`_poll_create_result`, itself scheduled via `self.after`, purely on
+   the main thread). `_run_create_job` is the same
+   `folder_creator`/`word_filler`/`web_filler` logic as before, just
+   fed from `job` instead of reading tkinter variables directly - all
+   three are plain file-IO/network functions with no tkinter dependency,
+   so they're safe to run off-thread. It reports its outcome (success,
+   partial failure with what succeeded so far, or a hard folder-creation
+   failure) by putting a small dict onto a `queue.Queue`, then
+   `_on_create_done` (main thread, called once `_poll_create_result`
+   sees something in the queue) does all the actual UI work - the
+   messagebox text and control flow for every outcome (`cannot_create`/
+   `error`/`partial`/`success`) is byte-for-byte the same as the old
+   synchronous version, just relocated.
+3. **`self.after(0, ...)` called directly from the worker thread raises
+   `RuntimeError: main thread is not in main loop` on this Python
+   version** - the first version of this fix tried that (a pattern often
+   cited as "the standard way" to signal tkinter from a thread), and it
+   only got caught because the new flow was actually run end-to-end
+   headlessly (background thread does real folder/doc creation, a test
+   loop calls `app.update()` until the result var changes), not because
+   the pattern was independently known to be broken - see "What Didn't
+   Work" for why this is a standing lesson about that specific claim.
+   Fixed with a `queue.Queue`: the worker thread only ever calls
+   `queue.put()` (genuinely thread-safe, no Tk/Tcl involvement at all);
+   `self.after` is *only* ever called by code already running on the main
+   thread (`_on_create` kicking off the first poll, and
+   `_poll_create_result` rescheduling itself), never by the worker.
+4. **A `ttk.Progressbar(mode="indeterminate")` in a small modal `Toplevel`**
+   ("Creating project, please wait...") - indeterminate rather than a
+   real percentage, since there's no reliable per-document/per-request
+   progress signal to drive a determinate bar off (6 documents of very
+   different sizes plus one network call). `grab_set()` and a no-op
+   `WM_DELETE_WINDOW` handler while busy - the user can't close it or
+   interact with the main window mid-Create, matching how
+   `_show_success_dialog` already behaves. `next_button`/`back_button`
+   are also explicitly disabled/re-enabled around the operation
+   (`_set_busy`), on top of the dialog's own grab, since the grab alone
+   wouldn't stop a stray Enter-key binding or similar from reaching the
+   main window.
+5. **The Review & Create step's own label text was also stale and
+   actively wrong** - still described Step 2/3 as not-yet-implemented
+   ("Coming once their templates/details are provided...") from a much
+   earlier point in the project, visible on the exact screen this feature
+   touches. Updated to describe what Create actually does today (six
+   documents plus optional MinuteDock sync) while already in this file
+   for the threading change.
+
+Previous handoff's own changes (historical record, already pushed as
+`b004dbf`) - MinuteDock API sync (Feature 3):
 `app/core/minutedock_client.py` (new), `app/core/web_filler.py` (stub
 replaced), `app/gui/steps/minutedock_step.py` (new),
 `app/gui/steps/settings_step.py`, `app/gui/steps/review_step.py`,
 `app/gui/main_window.py`, `app/config/settings.py`, and
-`requirements.txt` are modified/added in the working tree:
+`requirements.txt` were modified/added by that commit:
 
 1. **The user identified the target timesheet website (MinuteDock) and
    provided its OpenAPI 3.1.1 spec**, plus a screenshot of MinuteDock's own
@@ -1397,9 +1468,42 @@ themselves (see "Next Steps").
   `Test-Path` on every artifact (install dir, Start Menu shortcut, Desktop
   shortcut, registry uninstall key) - all four, not just the obvious one -
   before considering the round-trip verified.
+- **Actually running the threaded Create flow headlessly (not just eyeballing
+  the diff) caught a real `RuntimeError` the first version would have hit on
+  every single MinuteDock-enabled Create.** The test drove the exact real
+  path: called `app._on_create()`, confirmed the button disabled/dialog
+  shown/result-var-still-empty *immediately* (proving the call itself
+  doesn't block), then looped `app.update()` until the background thread's
+  outcome landed, then checked the final state (button re-enabled, dialog
+  gone, files actually on disk, wizard reset on success / left alone on
+  partial failure). That immediate-return check specifically is what a
+  "does the final state look right" test would have skipped straight past -
+  it's the difference between "eventually correct" and "actually
+  non-blocking," which was the entire point of the feature.
 
 ## What Didn't Work / Avoid Repeating
 
+- **Calling `self.after(0, callback)` directly from a background thread to
+  hand a result back to tkinter.** This is widely cited as *the* standard
+  cross-thread signaling idiom for tkinter, and the first version of the
+  Create-threading fix used it - it raises `RuntimeError: main thread is
+  not in main loop` on this project's Python version (3.13) the moment the
+  worker thread calls it, because `Widget.after()` internally calls
+  `self.tk.createcommand(...)` to register the callback, and CPython's
+  tkinter added a same-thread check around that call. **Confirmed by
+  actually running the threaded flow**, not by re-reading tkinter's docs
+  harder - the failure only showed up mid-test, as an exception logged
+  from the background thread while the main test loop kept polling
+  (`app.update()`) for a result var that would now never arrive without
+  the fix. The actually-safe pattern: the worker thread only ever touches
+  a `queue.Queue` (`.put()`, genuinely thread-safe, no Tk/Tcl call
+  involved at all); `self.after` itself is only ever invoked by code
+  already running on the main thread, polling that queue on a short
+  interval and rescheduling itself. **If a future feature needs a
+  background thread to report back to tkinter, reach for `queue.Queue` +
+  a main-thread `self.after` poll loop directly - don't reach for
+  `widget.after()` from the thread itself, even though it's the pattern
+  most commonly recommended online.**
 - **Collapsing an entire paragraph's text into its first run** when
   substituting placeholders. Works fine until a paragraph has non-uniform
   formatting across runs (highlight on some, not others) — then it
@@ -1625,7 +1729,12 @@ themselves (see "Next Steps").
    window) and the B2 Letter street/suburb/town fix (confirmed via the
    generated `.docx`, not by looking at the document in Word itself). **Also
    unclicked:** the new MinuteDock step's checkbox/radio/rate-entry UI -
-   only verified programmatically (see below).
+   only verified programmatically (see below). **Also unclicked:** the new
+   "please wait" progress dialog for Create - headless testing confirmed
+   the *mechanism* works (non-blocking, correct end state), but nobody has
+   looked at whether the dialog is positioned sensibly over the main
+   window, whether the indeterminate bar animates smoothly, or how it
+   feels for a real multi-second MinuteDock network call.
 2. **Consent Document folder** (`06 Consent Document`) now gets PS1, LBP
    form, Calculation Statement, Specifications, and B2 Letter - probably
    everything the user meant by "other documents belong there too" when

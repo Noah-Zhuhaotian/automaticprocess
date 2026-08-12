@@ -8,9 +8,12 @@ Contact/Project to MinuteDock.
 
 from __future__ import annotations
 
+import queue
+import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
+from typing import Any
 
 from app.core import folder_creator, web_filler, word_filler
 from app.core.minutedock_client import MinuteDockError
@@ -43,12 +46,11 @@ class ReviewStepMixin:
         ttk.Label(
             parent,
             text=(
-                "Click Create to generate everything for this project.\n\n"
-                "Currently implemented: project folders on the Engineer/Drafting/"
-                "Admin drives.\n"
-                "Coming once their templates/details are provided: the Project "
-                "register and Consent Document files, PS1/B2 letter documents, "
-                "and the timesheet website submission."
+                "Click Create to generate everything for this project: folders on "
+                "the Engineer/Drafting/Admin drives, the Project register, PS1, "
+                "LBP form, Calculation Statement, Specifications, and B2 Letter "
+                "documents, and (if a MinuteDock token is configured in Settings) "
+                "the matching MinuteDock Contact/Project."
             ),
             wraplength=560,
             justify="left",
@@ -222,23 +224,13 @@ class ReviewStepMixin:
         return replacements
 
     def _on_create(self) -> None:
-        try:
-            created = folder_creator.create_project_folders(
-                job_number=self.job_number_var.get(),
-                street=self.street_var.get(),
-                engineer_drive=self.settings.get("engineer_drive", ""),
-                drafting_drive=self.settings.get("drafting_drive", ""),
-                admin_drive=self.settings.get("admin_drive", ""),
-            )
-        except (ValueError, FileExistsError) as exc:
-            messagebox.showerror("Cannot create", str(exc))
-            return
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Failed to create project folders")
-            messagebox.showerror("Error", str(exc))
-            return
-
-        summary = "\n".join(f"{name}: {path}" for name, path in created.items())
+        """Gathers everything the worker needs from tkinter variables (must
+        happen here, on the main thread - tkinter itself isn't thread-safe)
+        into a plain-data `job` dict, then hands the actual folder/document/
+        MinuteDock work to a background thread so the window stays
+        responsive instead of freezing for the whole operation. See
+        _run_create_job/_on_create_done for the rest of the flow.
+        """
         replacements = self._build_replacements()
         bullet_lists = {"scope": self._build_scope_lines()}
         bullet_lists.update(self._build_lbp_description_bullets())
@@ -281,7 +273,86 @@ class ReviewStepMixin:
                 "keep_table_rows": {0: b2_letter_materials},
             },
         ]
-        for doc in documents:
+
+        minutedock_args = None
+        token = self.settings.get("minutedock_access_token", "").strip()
+        if token:
+            minutedock_args = {
+                "access_token": token,
+                "client_name": replacements["client_info"],
+                "project_name": folder_creator.build_project_folder_name(
+                    replacements["job_number"], replacements["street"]
+                ),
+                "billable": self.minutedock_billable_var.get(),
+                "standard_rate_dollars": (
+                    self.minutedock_standard_rate_var.get().strip()
+                    if self.minutedock_rate_mode_var.get() == "standard"
+                    else None
+                ),
+            }
+
+        job = {
+            "job_number": self.job_number_var.get(),
+            "street": self.street_var.get(),
+            "engineer_drive": self.settings.get("engineer_drive", ""),
+            "drafting_drive": self.settings.get("drafting_drive", ""),
+            "admin_drive": self.settings.get("admin_drive", ""),
+            "replacements": replacements,
+            "bullet_lists": bullet_lists,
+            "documents": documents,
+            "minutedock": minutedock_args,
+        }
+
+        self._set_busy(True)
+        self._create_result_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+        threading.Thread(target=self._run_create_job, args=(job,), daemon=True).start()
+        self.after(100, self._poll_create_result)
+
+    def _poll_create_result(self) -> None:
+        """Runs entirely on the main thread (self.after only ever
+        reschedules itself from here, never from the worker thread) -
+        calling self.after() directly from _run_create_job's own thread
+        raises "RuntimeError: main thread is not in main loop" on this
+        Python version, confirmed by actually running it, not assumed.
+        queue.Queue is the thread-safe hand-off instead: the worker only
+        ever calls queue.put(), never touches tkinter itself.
+        """
+        try:
+            outcome = self._create_result_queue.get_nowait()
+        except queue.Empty:
+            self.after(100, self._poll_create_result)
+            return
+        self._on_create_done(outcome)
+
+    def _run_create_job(self, job: dict[str, Any]) -> None:
+        """Runs off the main thread - must never touch tkinter widgets,
+        variables, or any tkinter method (including self.after - see
+        _poll_create_result) directly; only self._create_result_queue.put()
+        is safe to call from here. folder_creator/word_filler/web_filler are
+        plain file-IO/network functions with no tkinter dependency, so
+        they're safe to run here unlike the code that gathered `job`.
+        """
+        try:
+            created = folder_creator.create_project_folders(
+                job_number=job["job_number"],
+                street=job["street"],
+                engineer_drive=job["engineer_drive"],
+                drafting_drive=job["drafting_drive"],
+                admin_drive=job["admin_drive"],
+            )
+        except (ValueError, FileExistsError) as exc:
+            self._create_result_queue.put({"kind": "cannot_create", "message": str(exc)})
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Failed to create project folders")
+            self._create_result_queue.put({"kind": "error", "message": str(exc)})
+            return
+
+        summary = "\n".join(f"{name}: {path}" for name, path in created.items())
+        replacements = job["replacements"]
+        bullet_lists = job["bullet_lists"]
+
+        for doc in job["documents"]:
             template_path = doc["template"]
             relative_output = doc["output"]
             if not template_path.exists():
@@ -304,45 +375,94 @@ class ReviewStepMixin:
                 summary += f"\n{relative_output}: {output_path}"
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Failed to fill template %s", template_path)
-                self.create_result_var.set(f"Created:\n{summary}")
-                messagebox.showwarning(
-                    "Partial success", f"Some items were created, but {relative_output} failed:\n{exc}"
+                self._create_result_queue.put(
+                    {
+                        "kind": "partial",
+                        "summary": summary,
+                        "message": f"Some items were created, but {relative_output} failed:\n{exc}",
+                    }
                 )
                 return
 
-        token = self.settings.get("minutedock_access_token", "").strip()
-        if token:
-            project_name = folder_creator.build_project_folder_name(
-                replacements["job_number"], replacements["street"]
-            )
+        minutedock_args = job["minutedock"]
+        if minutedock_args:
             try:
-                result = web_filler.sync_to_minutedock(
-                    token,
-                    client_name=replacements["client_info"],
-                    project_name=project_name,
-                    billable=self.minutedock_billable_var.get(),
-                    standard_rate_dollars=(
-                        self.minutedock_standard_rate_var.get().strip()
-                        if self.minutedock_rate_mode_var.get() == "standard"
-                        else None
-                    ),
-                )
+                result = web_filler.sync_to_minutedock(**minutedock_args)
                 summary += (
                     f"\nMinuteDock: contact '{result['contact']['name']}', "
                     f"project '{result['project']['name']}'"
                 )
             except MinuteDockError as exc:
                 logger.exception("Failed to sync to MinuteDock")
-                self.create_result_var.set(f"Created:\n{summary}")
-                messagebox.showwarning(
-                    "Partial success", f"Folders and documents were created, but MinuteDock sync failed:\n{exc}"
+                self._create_result_queue.put(
+                    {
+                        "kind": "partial",
+                        "summary": summary,
+                        "message": f"Folders and documents were created, but MinuteDock sync failed:\n{exc}",
+                    }
                 )
                 return
 
-        self.create_result_var.set(f"Created:\n{summary}")
+        self._create_result_queue.put({"kind": "success", "summary": summary})
+
+    def _on_create_done(self, outcome: dict[str, Any]) -> None:
+        """Runs back on the main thread (scheduled via self.after from
+        _run_create_job) - the only place in this create flow allowed to
+        touch tkinter widgets again once the background thread starts."""
+        self._set_busy(False)
+        kind = outcome["kind"]
+
+        if kind == "cannot_create":
+            messagebox.showerror("Cannot create", outcome["message"])
+            return
+        if kind == "error":
+            messagebox.showerror("Error", outcome["message"])
+            return
+        if kind == "partial":
+            self.create_result_var.set(f"Created:\n{outcome['summary']}")
+            messagebox.showwarning("Partial success", outcome["message"])
+            return
+
+        self.create_result_var.set(f"Created:\n{outcome['summary']}")
         self._update_availability_status()
         self._show_success_dialog("Done", "Project created successfully.")
         self._reset_for_new_project()
+
+    def _set_busy(self, busy: bool) -> None:
+        self.next_button.configure(state="disabled" if busy else "normal")
+        self.back_button.configure(state="disabled" if busy else ("normal" if self.current_step > 0 else "disabled"))
+        if busy:
+            self._show_progress_dialog()
+        else:
+            self._hide_progress_dialog()
+
+    def _show_progress_dialog(self) -> None:
+        dialog = tk.Toplevel(self)
+        dialog.title("Please wait")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: None)  # no closing while the work is running
+
+        frame = ttk.Frame(dialog, padding=24)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="Creating project, please wait...").pack(pady=(0, 12))
+        progress = ttk.Progressbar(frame, mode="indeterminate", length=260)
+        progress.pack()
+        progress.start(12)
+
+        self.update_idletasks()
+        x = self.winfo_rootx() + max((self.winfo_width() - 320) // 2, 0)
+        y = self.winfo_rooty() + max((self.winfo_height() - 120) // 2, 0)
+        dialog.geometry(f"+{x}+{y}")
+
+        dialog.grab_set()
+        self._progress_dialog = dialog
+
+    def _hide_progress_dialog(self) -> None:
+        dialog = getattr(self, "_progress_dialog", None)
+        if dialog is not None and dialog.winfo_exists():
+            dialog.destroy()
+        self._progress_dialog = None
 
     def _show_success_dialog(self, title: str, message: str) -> None:
         """Same modal, blocks-until-closed behavior as messagebox.showinfo,
