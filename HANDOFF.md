@@ -51,12 +51,60 @@ street/suburb/town tokens fixed via a general run-boundary-splitting fix
 in `word_filler.py` - see that commit's own section below for detail),
 `b004dbf` (MinuteDock API sync implemented as Feature 3; packaged the app
 as a real Windows installer via PyInstaller + Inno Setup - see that
-commit's own section below for detail).
+commit's own section below for detail), `e097e68` (Create runs in a
+background thread with a "please wait" progress dialog instead of
+freezing the window - see that commit's own section below for detail),
+`b511755` (PS1 Input left-edge alignment polish), `76fe6ef` (added
+USER_GUIDE.md, a non-technical user guide), `180dbb9` (README brought up
+to date with Inspection Schedule/MinuteDock/packaging, which it hadn't
+mentioned before).
 
-*This* handoff is **not yet committed** - `_on_create` now runs in a
-background thread with a "please wait" progress dialog, instead of
-freezing the window for the whole operation. `app/gui/steps/review_step.py`
-is the only file changed:
+*This* handoff is **not yet committed** - MinuteDock's Project Name/Short
+Code were being smashed into one string instead of using both fields as
+intended. `app/core/minutedock_client.py`, `app/core/web_filler.py`, and
+`app/gui/steps/review_step.py` are modified in the working tree:
+
+1. **The user noticed it on MinuteDock's own web UI**: a screenshot
+   showed a Project with Name `"23432 - 217 Armagh Street"` and Short
+   Code `"23432_-_217_armagh_street"` - MinuteDock had auto-slugified the
+   *entire* combined name into the short code, since nothing was ever
+   sent for that field. The fix isn't just "stop combining them" - it's
+   sending each piece to the field MinuteDock actually has for it:
+   `Project.name` = street only, `Project.short_code` = job number only
+   (previously `find_or_create_project` never sent `short_code` at all).
+2. **`find_or_create_project` gained a required `short_code` parameter**
+   and now sends it in the create payload alongside `name`. More
+   importantly, **the find-or-create match key changed from `name` to
+   `short_code`** - the job number, not the street, is the actual stable
+   unique identifier for a project (two unrelated jobs could plausibly
+   share a street name over the years; job numbers don't repeat), so
+   matching on it is more correct, not just a side effect of having the
+   field available now. `_find_by_name` was generalized to
+   `_find_by_field(items, field, value)` to support matching on either
+   column without duplicating the same loop.
+3. **`web_filler.sync_to_minutedock` gained a `project_short_code`
+   parameter**, and `review_step.py`'s `_on_create` now passes
+   `replacements["street"]` as `project_name` and
+   `replacements["job_number"]` as `project_short_code` directly, instead
+   of building one combined string via
+   `folder_creator.build_project_folder_name` (that helper is still used
+   for the actual folder name and the Word `{{address}}` token, which
+   legitimately do want the combined form - only the MinuteDock call
+   site changed).
+4. **Verified the plumbing, not just the diff** - re-ran the same
+   threaded-Create headless test used for the earlier progress-dialog
+   work (fake token, real folder/document creation, real MinuteDock
+   network call) and confirmed it still fails at exactly the same point
+   with the same 403 message, meaning the new required `project_short_code`
+   argument is wired through correctly end-to-end from the GUI with no
+   `TypeError`. The actual Name/Short Code values MinuteDock stores
+   couldn't be confirmed against a real account (no token available), so
+   this still wants a real-account check - see "Next Steps".
+
+Previous handoff's own changes (historical record, already pushed as
+`e097e68`) - Create runs in a background thread with a "please wait"
+progress dialog, instead of freezing the window for the whole operation.
+`app/gui/steps/review_step.py` was the only file changed:
 
 1. **The user noticed Create has a real wait (folder creation, six Word
    documents, and - if MinuteDock is configured - a network round trip)
@@ -1072,26 +1120,40 @@ loop).
 
 **Find-or-create, not create-only**, for both the Contact and the
 Project - `find_or_create_contact`/`find_or_create_project` each do a
-`GET` first (matching `name` exact, case-insensitive, trimmed - not
-substring, since e.g. "Smith" fuzzy-matching "Smith Family Trust" would
-silently attach a job to the wrong client) and only `POST` on a miss. This
-matters because `_on_create` can plausibly run twice for the same job (the
-existing "Partial success" pattern for a Word-doc-fill failure leaves the
-wizard state as-is rather than resetting, so a user could very reasonably
-click Create again) - without find-or-create, a retry would create
-duplicate MinuteDock records every time.
+`GET` first and only `POST` on a miss (via the shared `_find_by_field`
+helper). This matters because `_on_create` can plausibly run twice for
+the same job (the existing "Partial success" pattern for a Word-doc-fill
+failure leaves the wizard state as-is rather than resetting, so a user
+could very reasonably click Create again) - without find-or-create, a
+retry would create duplicate MinuteDock records every time.
 
-**Contact name** comes straight from the General step's `client_info_var`
-(free text, already existed - no new field needed). **Project name**
-reuses `folder_creator.build_project_folder_name(job_number, street)`
-verbatim - the exact same string used for the actual folder name - so the
-same identifier ties folders, Word docs, and the MinuteDock project
-together and can always be found again from job_number+street alone.
-**Billable/rate** come from the new MinuteDock wizard step (see "GUI:
-wizard steps" above); `default_rate_dollars` is only sent when the user
-picked "Set a standard rate" - never sent when they picked "Use contact
-rates", so MinuteDock's own contact-level default isn't overridden by
-accident.
+**Contact** matches on `name` (exact, case-insensitive, trimmed - not
+substring, since e.g. "Smith" fuzzy-matching "Smith Family Trust" would
+silently attach a job to the wrong client), fed straight from the General
+step's `client_info_var` (free text, already existed - no new field
+needed).
+
+**Project** matches on `short_code`, *not* `name` (fixed after a
+follow-up bug report - see the working-tree entry near the top of this
+file for the full story): `name` = street only, `short_code` = job
+number only - previously both were smashed into one combined string
+(`folder_creator.build_project_folder_name(job_number, street)`,
+e.g. `"1234 - 211 Ferry Rd"`) sent only as `name`, with nothing ever sent
+for `short_code` - MinuteDock's own UI then auto-slugified that entire
+combined name into the short code field on its own, which is not what
+either field is supposed to contain. The job number, not the street, is
+the real stable unique identifier for a project (two unrelated jobs could
+plausibly share a street name over the years), so matching find-or-create
+on `short_code` is more correct, not just a side effect of the field
+being available now. `folder_creator.build_project_folder_name` is still
+used as-is for the actual folder name and the Word `{{address}}` token,
+which legitimately do want the combined form - only the MinuteDock call
+site changed.
+
+**Billable/rate** come from the MinuteDock wizard step (see "GUI: wizard
+steps" above); `default_rate_dollars` is only sent when the user picked
+"Set a standard rate" - never sent when they picked "Use contact rates",
+so MinuteDock's own contact-level default isn't overridden by accident.
 
 **No pagination** for `GET /contacts`/`GET /projects` in this version - a
 single small engineering firm's account is assumed to fit in the API's
@@ -1740,21 +1802,21 @@ themselves (see "Next Steps").
    everything the user meant by "other documents belong there too" when
    that was mentioned in passing early on, but worth a quick
    confirmation now that the folder is this full rather than assuming.
-3. **Step 3 (MinuteDock sync) needs a real end-to-end run with the user's
-   own MinuteDock Personal Access Token.** No token was available while
-   building this, so testing so far covers: the failure path against the
-   real live API (a deliberately bad token, confirmed the exact error
-   surfaces correctly and folders/docs already created are left intact -
-   see "Feature 3: MinuteDock sync"), and the GUI wiring (step
-   appears/disappears based on whether a token is configured, validation,
-   rate normalization) via headless `MainWindow` scripts. **Not yet
-   verified**: that `find_or_create_contact`/`find_or_create_project`
-   actually create/match real records correctly against a live account,
-   that the "Test connection" button in Settings works end-to-end, or that
-   a second Create for the same job truly finds the existing
-   Contact/Project instead of duplicating it. Get the user's token in
-   (Settings → MinuteDock token → Test connection), run a real Create, and
-   check the result in the MinuteDock web UI.
+3. **The user *did* run Step 3 against a real MinuteDock account since the
+   last handoff, and it already caught a real bug**: Project Name and
+   Short Code were both getting the combined "job number - street"
+   string, since nothing was ever sent for `short_code` (see the
+   working-tree entry near the top of this file, and "Feature 3:
+   MinuteDock sync"). Fixed - `name` is now street only, `short_code` is
+   now job number only, and find-or-create matches on `short_code`
+   instead of `name`. **Still needs**: one more real Create against a real
+   account to confirm the Project now shows up in MinuteDock's web UI
+   with a clean Name ("217 Armagh Street") and Short Code ("23432")
+   instead of the smashed-together version, and that a second Create for
+   the same job number correctly finds/reuses that Project rather than
+   creating a duplicate (the find-or-create match key changed, so this is
+   worth re-confirming specifically, not just assuming the earlier
+   find-or-create testing still covers it).
 4. **Packaging is implemented but the real installer needs the user's own
    run.** `build_scripts/output/AutomaticProcess-Setup.exe` exists and its
    Inno Setup mechanics were verified via a throwaway non-admin variant

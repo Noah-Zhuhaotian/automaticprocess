@@ -66,17 +66,17 @@ def test_connection(token: str) -> str:
     return account.get("name", "")
 
 
-def _find_by_name(items: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
-    target = name.strip().casefold()
+def _find_by_field(items: list[dict[str, Any]], field: str, value: str) -> dict[str, Any] | None:
+    target = value.strip().casefold()
     for item in items:
-        if item.get("name", "").strip().casefold() == target:
+        if str(item.get(field, "")).strip().casefold() == target:
             return item
     return None
 
 
 def find_or_create_contact(token: str, name: str) -> dict[str, Any]:
     contacts = _request("GET", token, "/contacts", params={"active": "true"})
-    existing = _find_by_name(contacts, name)
+    existing = _find_by_field(contacts, "name", name)
     if existing is not None:
         return existing
 
@@ -88,15 +88,27 @@ def find_or_create_project(
     *,
     contact_id: str,
     name: str,
+    short_code: str,
     billable: bool,
     default_rate_dollars: str | None,
 ) -> dict[str, Any]:
+    """`name` is the display name (street only - the job number belongs in
+    `short_code`, not smashed into the same string); `short_code` is also
+    the match key for find-or-create, since the job number - not the
+    street - is the actual unique identifier for a project (two different
+    jobs could plausibly share a street name; job numbers don't repeat).
+    """
     projects = _request("GET", token, "/projects", params={"contact_id": contact_id, "active": "true"})
-    existing = _find_by_name(projects, name)
+    existing = _find_by_field(projects, "short_code", short_code)
     if existing is not None:
         return existing
 
-    project: dict[str, Any] = {"name": name, "contact_id": contact_id, "billable": billable}
+    project: dict[str, Any] = {
+        "name": name,
+        "short_code": short_code,
+        "contact_id": contact_id,
+        "billable": billable,
+    }
     if default_rate_dollars is not None:
         project["default_rate_dollars"] = default_rate_dollars
 

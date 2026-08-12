@@ -23,10 +23,16 @@ def sync_to_minutedock(
     *,
     client_name: str,
     project_name: str,
+    project_short_code: str,
     billable: bool,
     standard_rate_dollars: str | None,
 ) -> dict[str, Any]:
     """Find-or-create the MinuteDock Contact and Project for this job.
+
+    `project_name` is the street (display name only); `project_short_code`
+    is the job number - MinuteDock's Project.short_code field, and the
+    actual unique identifier used to find-or-create (see
+    minutedock_client.find_or_create_project for why).
 
     Returns {"contact": {...}, "project": {...}}. Raises
     minutedock_client.MinuteDockError on any failure.
@@ -36,6 +42,7 @@ def sync_to_minutedock(
         access_token,
         contact_id=contact["id"],
         name=project_name,
+        short_code=project_short_code,
         billable=billable,
         default_rate_dollars=standard_rate_dollars,
     )

@@ -280,9 +280,11 @@ class ReviewStepMixin:
             minutedock_args = {
                 "access_token": token,
                 "client_name": replacements["client_info"],
-                "project_name": folder_creator.build_project_folder_name(
-                    replacements["job_number"], replacements["street"]
-                ),
+                # MinuteDock's Project Name is the street only; the job
+                # number goes in its own Short Code field below, not smashed
+                # together into one string (see minutedock_client.py).
+                "project_name": replacements["street"],
+                "project_short_code": replacements["job_number"],
                 "billable": self.minutedock_billable_var.get(),
                 "standard_rate_dollars": (
                     self.minutedock_standard_rate_var.get().strip()
