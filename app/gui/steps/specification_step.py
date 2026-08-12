@@ -8,7 +8,11 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from app.gui.constants import SPECIFICATION_NUMERIC_FIELDS, SPECIFICATION_SECTIONS
+from app.gui.constants import (
+    SPECIFICATION_DROPDOWN_FIELDS,
+    SPECIFICATION_NUMERIC_FIELDS,
+    SPECIFICATION_SECTIONS,
+)
 
 
 class SpecificationStepMixin:
@@ -53,12 +57,22 @@ class SpecificationStepMixin:
                 fields_frame.grid(row=row, column=1, sticky="w", padx=(16, 0), pady=4)
                 for field_row, (var_name, label_text) in enumerate(fields):
                     ttk.Label(fields_frame, text=label_text).grid(row=field_row, column=0, sticky="w", pady=1)
-                    entry = ttk.Entry(
-                        fields_frame,
-                        textvariable=getattr(self, var_name),
-                        width=10,
-                        state="normal" if selected_var.get() else "disabled",
-                    )
+                    options = SPECIFICATION_DROPDOWN_FIELDS.get(var_name)
+                    if options is not None:
+                        entry = ttk.Combobox(
+                            fields_frame,
+                            textvariable=getattr(self, var_name),
+                            values=options,
+                            width=16,
+                            state="readonly" if selected_var.get() else "disabled",
+                        )
+                    else:
+                        entry = ttk.Entry(
+                            fields_frame,
+                            textvariable=getattr(self, var_name),
+                            width=10,
+                            state="normal" if selected_var.get() else "disabled",
+                        )
                     entry.grid(row=field_row, column=1, sticky="w", padx=(6, 0), pady=1)
                     self._specification_numeric_widgets[var_name] = entry
             row += 1
@@ -69,8 +83,9 @@ class SpecificationStepMixin:
             entry = self._specification_numeric_widgets.get(var_name)
             if entry is None or not entry.winfo_exists():
                 continue
+            is_dropdown = var_name in SPECIFICATION_DROPDOWN_FIELDS
             if selected:
-                entry.configure(state="normal")
+                entry.configure(state="readonly" if is_dropdown else "normal")
             else:
                 getattr(self, var_name).set("")
                 entry.configure(state="disabled")

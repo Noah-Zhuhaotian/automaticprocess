@@ -1,9 +1,9 @@
 """Step: Inspection Schedule - PS1's "Schedule 3 - Schedule of
 Inspections" table. The user picks which of the 7 typical inspection
-items apply (plus an optional free-text "Other" item) and orders them;
-that order becomes the table's No. column (see word_filler's
-_remove_unselected_table_rows and INSPECTION_ITEMS/INSPECTION_OTHER_* in
-constants.py).
+items apply, adds any number of free-text "Other" items, and orders
+everything; that order becomes the table's No. column (see word_filler's
+_reorder_table_rows/_insert_dynamic_table_rows and
+INSPECTION_ITEMS/INSPECTION_OTHER_LABEL in constants.py).
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-from app.gui.constants import INSPECTION_ITEMS, INSPECTION_OTHER_KEY
+from app.gui.constants import INSPECTION_ITEM_LABELS, INSPECTION_ITEMS
 
 
 class InspectionStepMixin:
@@ -19,26 +19,27 @@ class InspectionStepMixin:
         self.inspection_vars: dict[str, tk.BooleanVar] = {
             key: tk.BooleanVar(value=False) for key, _item, _time_frame in INSPECTION_ITEMS
         }
-        self.inspection_other_var = tk.BooleanVar(value=False)
-        self.inspection_other_description_var = tk.StringVar()
-        self.inspection_other_time_frame_var = tk.StringVar()
-        # Order of *selected* keys only - the single source of truth for
-        # both what's included and the No. column each gets. Kept in sync
-        # with the checkboxes by _on_inspection_toggle rather than derived
-        # fresh each time, so a user's manual reordering (Move Up/Down)
-        # survives further checkbox changes elsewhere in the list.
+        # Other items are unbounded, so each one gets a generated id
+        # ("other_1", "other_2", ...) rather than a single fixed key -
+        # self.inspection_order (shared with the fixed items above) is the
+        # single source of truth for both which are included and in what
+        # sequence, same as before.
+        self.inspection_other_items_by_id: dict[str, dict[str, tk.StringVar]] = {}
+        self._inspection_other_counter = 0
         self.inspection_order: list[str] = []
-        self._inspection_other_widgets: list[tk.Widget] = []
+
+        self._inspection_other_container: ttk.Frame | None = None
+        self._inspection_other_item_frames: dict[str, ttk.Frame] = {}
         self._inspection_order_listbox: tk.Listbox | None = None
 
     def _inspection_item_text(self, key: str) -> str:
-        if key == INSPECTION_OTHER_KEY:
-            description = self.inspection_other_description_var.get().strip()
-            return f"Other: {description}" if description else "Other"
-        for item_key, item_text, _time_frame in INSPECTION_ITEMS:
-            if item_key == key:
-                return item_text
-        raise KeyError(key)
+        if key in INSPECTION_ITEM_LABELS:
+            return INSPECTION_ITEM_LABELS[key]
+        entry = self.inspection_other_items_by_id.get(key)
+        if entry is None:
+            return "Other"
+        description = entry["description_var"].get().strip()
+        return f"Other: {description}" if description else "Other"
 
     # ---------- Step: Inspection Schedule ----------
     def _build_inspection_step(self, parent: ttk.Frame) -> None:
@@ -66,28 +67,20 @@ class InspectionStepMixin:
             ).grid(row=row, column=0, columnspan=2, sticky="w", pady=2)
             row += 1
 
-        ttk.Checkbutton(
-            frame,
-            text="Other",
-            variable=self.inspection_other_var,
-            command=self._on_inspection_other_toggle,
-        ).grid(row=row, column=0, columnspan=2, sticky="w", pady=(8, 2))
+        ttk.Label(frame, text="Other items:").grid(row=row, column=0, columnspan=2, sticky="w", pady=(8, 2))
         row += 1
 
-        other_frame = ttk.Frame(frame)
-        other_frame.grid(row=row, column=0, columnspan=2, sticky="w", padx=(20, 0), pady=(0, 8))
-        ttk.Label(other_frame, text="Item of inspection:").grid(row=0, column=0, sticky="w")
-        description_entry = ttk.Entry(
-            other_frame, textvariable=self.inspection_other_description_var, width=42, state="disabled"
+        self._inspection_other_container = ttk.Frame(frame)
+        self._inspection_other_container.grid(row=row, column=0, columnspan=2, sticky="w")
+        row += 1
+
+        self._inspection_other_item_frames = {}
+        for item_id in self.inspection_other_items_by_id:
+            self._build_inspection_other_item_row(item_id)
+
+        ttk.Button(frame, text="Add Other", command=self._add_inspection_other_item).grid(
+            row=row, column=0, sticky="w", pady=(0, 8)
         )
-        description_entry.grid(row=0, column=1, sticky="w", padx=(6, 0), pady=2)
-        description_entry.bind("<KeyRelease>", lambda event: self._refresh_inspection_order_listbox())
-        ttk.Label(other_frame, text="Time frame:").grid(row=1, column=0, sticky="w")
-        time_frame_entry = ttk.Entry(
-            other_frame, textvariable=self.inspection_other_time_frame_var, width=42, state="disabled"
-        )
-        time_frame_entry.grid(row=1, column=1, sticky="w", padx=(6, 0), pady=2)
-        self._inspection_other_widgets = [description_entry, time_frame_entry]
         row += 1
 
         ttk.Label(frame, text="Order (top = No. 1):").grid(row=row, column=0, sticky="w", pady=(8, 4))
@@ -108,6 +101,46 @@ class InspectionStepMixin:
 
         self._refresh_inspection_order_listbox()
 
+    def _build_inspection_other_item_row(self, item_id: str) -> None:
+        container = self._inspection_other_container
+        if container is None or not container.winfo_exists():
+            return
+        entry_vars = self.inspection_other_items_by_id[item_id]
+
+        row_frame = ttk.Frame(container)
+        row_frame.pack(fill="x", pady=2)
+        ttk.Label(row_frame, text="Item of inspection:").grid(row=0, column=0, sticky="w")
+        description_entry = ttk.Entry(row_frame, textvariable=entry_vars["description_var"], width=32)
+        description_entry.grid(row=0, column=1, sticky="w", padx=(6, 0))
+        description_entry.bind("<KeyRelease>", lambda event: self._refresh_inspection_order_listbox())
+        ttk.Label(row_frame, text="Time frame:").grid(row=0, column=2, sticky="w", padx=(12, 0))
+        time_frame_entry = ttk.Entry(row_frame, textvariable=entry_vars["time_frame_var"], width=22)
+        time_frame_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
+        ttk.Button(row_frame, text="Remove", command=lambda: self._remove_inspection_other_item(item_id)).grid(
+            row=0, column=4, sticky="w", padx=(8, 0)
+        )
+        self._inspection_other_item_frames[item_id] = row_frame
+
+    def _add_inspection_other_item(self) -> None:
+        self._inspection_other_counter += 1
+        item_id = f"other_{self._inspection_other_counter}"
+        self.inspection_other_items_by_id[item_id] = {
+            "description_var": tk.StringVar(),
+            "time_frame_var": tk.StringVar(),
+        }
+        self._build_inspection_other_item_row(item_id)
+        self.inspection_order.append(item_id)
+        self._refresh_inspection_order_listbox()
+
+    def _remove_inspection_other_item(self, item_id: str) -> None:
+        frame = self._inspection_other_item_frames.pop(item_id, None)
+        if frame is not None and frame.winfo_exists():
+            frame.destroy()
+        self.inspection_other_items_by_id.pop(item_id, None)
+        if item_id in self.inspection_order:
+            self.inspection_order.remove(item_id)
+        self._refresh_inspection_order_listbox()
+
     def _on_inspection_toggle(self, key: str, selected: bool) -> None:
         if selected:
             if key not in self.inspection_order:
@@ -116,16 +149,6 @@ class InspectionStepMixin:
             if key in self.inspection_order:
                 self.inspection_order.remove(key)
         self._refresh_inspection_order_listbox()
-
-    def _on_inspection_other_toggle(self) -> None:
-        selected = self.inspection_other_var.get()
-        for widget in self._inspection_other_widgets:
-            if widget.winfo_exists():
-                widget.configure(state="normal" if selected else "disabled")
-        if not selected:
-            self.inspection_other_description_var.set("")
-            self.inspection_other_time_frame_var.set("")
-        self._on_inspection_toggle(INSPECTION_OTHER_KEY, selected)
 
     def _move_inspection_item(self, direction: int) -> None:
         listbox = self._inspection_order_listbox
@@ -155,11 +178,11 @@ class InspectionStepMixin:
         if not self.inspection_order:
             messagebox.showerror("Missing info", "Select at least one inspection item.")
             return False
-        if self.inspection_other_var.get():
-            if not self.inspection_other_description_var.get().strip():
-                messagebox.showerror("Missing info", '"Item of inspection" is required for Other.')
+        for entry in self.inspection_other_items_by_id.values():
+            if not entry["description_var"].get().strip():
+                messagebox.showerror("Missing info", '"Item of inspection" is required for every Other item.')
                 return False
-            if not self.inspection_other_time_frame_var.get().strip():
-                messagebox.showerror("Missing info", '"Time frame" is required for Other.')
+            if not entry["time_frame_var"].get().strip():
+                messagebox.showerror("Missing info", '"Time frame" is required for every Other item.')
                 return False
         return True

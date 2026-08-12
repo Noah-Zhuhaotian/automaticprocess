@@ -19,7 +19,6 @@ from app.gui.constants import (
     CHECKED,
     CM_ITEMS,
     INSPECTION_ITEM_LABELS,
-    INSPECTION_OTHER_KEY,
     INSPECTION_OTHER_LABEL,
     LBP_TEMPLATE,
     PROJECT_REGISTER_TEMPLATE,
@@ -88,32 +87,56 @@ class ReviewStepMixin:
         }
 
     def _build_inspection_replacements(self) -> dict[str, str]:
-        # inspection_<key>_no is the user's chosen order (1-based position
-        # in self.inspection_order) - the No. column in PS1's Schedule of
-        # Inspections. Only selected items' tokens matter since
-        # unselected rows get deleted before replacement runs (see
-        # _inspection_keep_labels/keep_table_rows in _on_create).
-        replacements = {
-            f"inspection_{key}_no": str(position) for position, key in enumerate(self.inspection_order, start=1)
+        # inspection_<key>_no is only for the 7 *fixed* items - the user's
+        # chosen order (1-based position in self.inspection_order), the
+        # No. column in PS1's Schedule of Inspections. Other items don't
+        # go through {{token}} replacement at all - see
+        # _build_inspection_table_data, which bakes their No./description/
+        # time frame directly when building each new row.
+        return {
+            f"inspection_{key}_no": str(position)
+            for position, key in enumerate(self.inspection_order, start=1)
+            if key in INSPECTION_ITEM_LABELS
         }
-        if self.inspection_other_var.get():
-            replacements["inspection_other_description"] = self.inspection_other_description_var.get().strip()
-            replacements["inspection_other_time_frame"] = self.inspection_other_time_frame_var.get().strip()
-        return replacements
 
-    def _inspection_row_order_labels(self) -> list[str]:
-        # Matches _remove_unselected_table_rows/_reorder_table_rows
-        # (label_column=1) against the Item-of-inspection column - the No.
-        # column can't be used since it's still an unfilled {{token}} at
-        # that point (see PS1_INSPECTION_TABLE_INDEX in constants.py). Kept
-        # in self.inspection_order's actual sequence so the same list
-        # drives both which rows survive (as a set) and the physical order
-        # they end up in (see _on_create) - assigning the right number to
-        # a row isn't enough on its own if the row itself never moves.
-        def label(key: str) -> str:
-            return INSPECTION_OTHER_LABEL if key == INSPECTION_OTHER_KEY else INSPECTION_ITEM_LABELS[key]
+    def _build_inspection_table_data(self):
+        """Everything _on_create needs to drive PS1's Schedule of
+        Inspections table, derived once from self.inspection_order (fixed
+        item keys and inspection_other_items_by_id ids, interleaved in
+        the user's chosen sequence):
+        - fixed_keep_labels: which fixed items' rows survive (keep_table_rows)
+        - fixed_row_order: those same fixed items' Item-of-inspection text,
+          in order, for reordering them relative to each other
+          (table_row_order) - Other items are excluded here since they
+          don't exist as rows yet at that point.
+        - dynamic_order: the *full* interleaved sequence (fixed items'
+          Item-of-inspection text mixed with Other items' ids) that
+          _insert_dynamic_table_rows walks to insert each Other row at the
+          right spot among the now-correctly-ordered fixed rows.
+        - dynamic_values: each Other id's own [No, description, time
+          frame] cell values, already resolved - no {{token}}s involved.
+        """
+        fixed_keep_labels: set[str] = set()
+        fixed_row_order: list[str] = []
+        dynamic_order: list[str] = []
+        dynamic_values: dict[str, list[str]] = {}
 
-        return [label(key) for key in self.inspection_order]
+        for position, key in enumerate(self.inspection_order, start=1):
+            if key in INSPECTION_ITEM_LABELS:
+                label = INSPECTION_ITEM_LABELS[key]
+                fixed_keep_labels.add(label)
+                fixed_row_order.append(label)
+                dynamic_order.append(label)
+            else:
+                entry = self.inspection_other_items_by_id[key]
+                dynamic_order.append(key)
+                dynamic_values[key] = [
+                    str(position),
+                    entry["description_var"].get().strip(),
+                    entry["time_frame_var"].get().strip(),
+                ]
+
+        return fixed_keep_labels, fixed_row_order, dynamic_order, dynamic_values
 
     def _build_replacements(self) -> dict[str, str]:
         all_part = self.all_part_var.get()
@@ -221,51 +244,43 @@ class ReviewStepMixin:
         b2_letter_materials = {
             material for material in B2_LETTER_MATERIALS if self.b2_letter_material_vars[material].get()
         }
-        inspection_row_order = self._inspection_row_order_labels()
+        fixed_keep_labels, fixed_row_order, dynamic_order, dynamic_values = self._build_inspection_table_data()
+
+        # Dicts, not positional tuples - the PS1 entry alone needs 6 of
+        # word_filler's optional table-editing parameters, all None for
+        # every other document; .get() with a default reads far better
+        # than a growing all-None tuple per document.
         documents = [
-            (PROJECT_REGISTER_TEMPLATE, Path("Project register.docx"), None, None, None, None),
-            (
-                PS1_TEMPLATE,
-                Path("06 Consent Document") / "PS1 Producer Statement.docx",
-                None,
-                {PS1_INSPECTION_TABLE_INDEX: set(inspection_row_order)},
-                {PS1_INSPECTION_TABLE_INDEX: 1},
-                {PS1_INSPECTION_TABLE_INDEX: inspection_row_order},
-            ),
-            (LBP_TEMPLATE, Path("06 Consent Document") / "LBP form.docx", None, None, None, None),
-            (
-                CALCULATION_STATEMENT_TEMPLATE,
-                Path("06 Consent Document") / "Calculation Statement.docx",
-                None,
-                None,
-                None,
-                None,
-            ),
-            (
-                SPECIFICATION_TEMPLATE,
-                Path("06 Consent Document") / "Specifications.docx",
-                specification_sections,
-                None,
-                None,
-                None,
-            ),
-            (
-                B2_LETTER_TEMPLATE,
-                Path("06 Consent Document") / "B2 Letter.docx",
-                None,
-                {0: b2_letter_materials},
-                None,
-                None,
-            ),
+            {"template": PROJECT_REGISTER_TEMPLATE, "output": Path("Project register.docx")},
+            {
+                "template": PS1_TEMPLATE,
+                "output": Path("06 Consent Document") / "PS1 Producer Statement.docx",
+                "keep_table_rows": {PS1_INSPECTION_TABLE_INDEX: fixed_keep_labels},
+                "keep_table_row_label_columns": {PS1_INSPECTION_TABLE_INDEX: 1},
+                "table_row_order": {PS1_INSPECTION_TABLE_INDEX: fixed_row_order},
+                "dynamic_table_row_templates": {PS1_INSPECTION_TABLE_INDEX: INSPECTION_OTHER_LABEL},
+                "dynamic_table_row_order": {PS1_INSPECTION_TABLE_INDEX: dynamic_order},
+                "dynamic_table_row_values": {PS1_INSPECTION_TABLE_INDEX: dynamic_values},
+            },
+            {"template": LBP_TEMPLATE, "output": Path("06 Consent Document") / "LBP form.docx"},
+            {
+                "template": CALCULATION_STATEMENT_TEMPLATE,
+                "output": Path("06 Consent Document") / "Calculation Statement.docx",
+            },
+            {
+                "template": SPECIFICATION_TEMPLATE,
+                "output": Path("06 Consent Document") / "Specifications.docx",
+                "keep_sections": specification_sections,
+            },
+            {
+                "template": B2_LETTER_TEMPLATE,
+                "output": Path("06 Consent Document") / "B2 Letter.docx",
+                "keep_table_rows": {0: b2_letter_materials},
+            },
         ]
-        for (
-            template_path,
-            relative_output,
-            keep_sections,
-            keep_table_rows,
-            keep_table_row_label_columns,
-            table_row_order,
-        ) in documents:
+        for doc in documents:
+            template_path = doc["template"]
+            relative_output = doc["output"]
             if not template_path.exists():
                 logger.info("Template not found at %s, skipping", template_path)
                 continue
@@ -275,10 +290,13 @@ class ReviewStepMixin:
                     str(created["engineer"] / relative_output),
                     replacements,
                     bullet_lists,
-                    keep_sections=keep_sections,
-                    keep_table_rows=keep_table_rows,
-                    keep_table_row_label_columns=keep_table_row_label_columns,
-                    table_row_order=table_row_order,
+                    keep_sections=doc.get("keep_sections"),
+                    keep_table_rows=doc.get("keep_table_rows"),
+                    keep_table_row_label_columns=doc.get("keep_table_row_label_columns"),
+                    table_row_order=doc.get("table_row_order"),
+                    dynamic_table_row_templates=doc.get("dynamic_table_row_templates"),
+                    dynamic_table_row_order=doc.get("dynamic_table_row_order"),
+                    dynamic_table_row_values=doc.get("dynamic_table_row_values"),
                 )
                 summary += f"\n{relative_output}: {output_path}"
             except Exception as exc:  # noqa: BLE001
@@ -364,9 +382,9 @@ class ReviewStepMixin:
 
         for key in self.inspection_vars:
             self.inspection_vars[key].set(False)
-        self.inspection_other_var.set(False)
-        self.inspection_other_description_var.set("")
-        self.inspection_other_time_frame_var.set("")
+        self.inspection_other_items_by_id = {}
+        self._inspection_other_counter = 0
+        self._inspection_other_item_frames = {}
         self.inspection_order = []
 
         self.waivers_required_var.set("")

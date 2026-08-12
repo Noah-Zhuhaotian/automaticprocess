@@ -77,6 +77,67 @@ def _run_range_for_span(offsets: list[int], start_char: int, end_char: int) -> t
     return start_idx, end_idx
 
 
+# Child elements a run can hold whose text content _run_text_offsets/
+# Run.text already fully captures and can losslessly round-trip through
+# the text setter (which re-expands "\t"/"\n"/"\r" back into w:tab/w:br/
+# w:cr on assignment). A run holding anything else (a drawing, a field
+# character, ...) can't be safely split this way - splitting it would
+# silently drop that content, so _split_run must only ever be called
+# after _run_is_splittable confirms this.
+_SPLITTABLE_RUN_CHILD_TAGS = {
+    qn("w:rPr"), qn("w:t"), qn("w:tab"), qn("w:br"), qn("w:cr"), qn("w:noBreakHyphen"), qn("w:ptab"),
+}
+
+
+def _run_is_splittable(run: Run) -> bool:
+    return all(child.tag in _SPLITTABLE_RUN_CHILD_TAGS for child in run._element)
+
+
+def _split_run(run: Run, split_pos: int) -> Run:
+    """Split a run's text at split_pos characters into two sibling runs
+    with identical formatting (rPr deep-copied): the original run keeps
+    the text before split_pos, a new run inserted right after it gets the
+    text from split_pos onward. Caller must confirm _run_is_splittable
+    first - this assumes the round-trip through Run.text is lossless.
+    """
+    text = run.text
+    new_r = deepcopy(run._element)
+    run._element.addnext(new_r)
+    new_run = Run(new_r, run._parent)
+
+    run.text = text[:split_pos]
+    new_run.text = text[split_pos:]
+    return new_run
+
+
+def _ensure_run_boundary(runs: list[Run], offsets: list[int], pos: int) -> tuple[list[Run], list[int]]:
+    """Make sure some run starts exactly at character position pos,
+    splitting whichever run currently straddles it (see _split_run) if
+    that run is safe to split. A no-op if pos already aligns with a run
+    boundary, or if the straddling run can't be split - callers must
+    still re-check alignment afterward via _run_range_for_span.
+
+    Templates are typically hand-typed in Word, where autocomplete/
+    spellcheck can fire mid-token and leave one run holding a token's
+    tail plus the next token's opening braces (e.g. one run reading
+    "{{street}}, {{" instead of a clean break after "}}") - the exact
+    alignment _run_range_for_span requires then never happens on its own,
+    even though the run's formatting is uniform and splitting it is safe.
+    """
+    if pos in offsets:
+        return runs, offsets
+    for i in range(len(offsets) - 1):
+        if offsets[i] < pos < offsets[i + 1]:
+            run = runs[i]
+            if not _run_is_splittable(run):
+                return runs, offsets
+            new_run = _split_run(run, pos - offsets[i])
+            runs = runs[: i + 1] + [new_run] + runs[i + 1 :]
+            offsets = offsets[: i + 1] + [pos] + offsets[i + 1 :]
+            return runs, offsets
+    return runs, offsets
+
+
 def _replace_in_paragraph(
     paragraph: Paragraph, replacements: dict[str, str], skip_warning_keys: frozenset[str] = frozenset()
 ) -> None:
@@ -110,6 +171,14 @@ def _replace_in_paragraph(
             continue
 
         rng = _run_range_for_span(offsets, match.start(), match.end())
+        if rng is None:
+            # Doesn't cleanly align - try splitting whichever run(s)
+            # straddle the token's start/end into two (same formatting),
+            # then re-check. A no-op wherever a boundary already exists or
+            # the straddling run can't be safely split.
+            runs, offsets = _ensure_run_boundary(runs, offsets, match.start())
+            runs, offsets = _ensure_run_boundary(runs, offsets, match.end())
+            rng = _run_range_for_span(offsets, match.start(), match.end())
         if rng is None:
             logger.warning("{{%s}} does not align with run boundaries, leaving as-is", key)
             continue
@@ -415,6 +484,100 @@ def _reorder_table_rows(
         anchor = tr
 
 
+def _set_tc_text(tc, text: str) -> None:
+    """Set a <w:tc>'s first run's text directly, keeping that run's own
+    rPr/formatting - used for table rows built from already-known-final
+    values (no {{token}} substitution involved), e.g. PS1's dynamically
+    inserted "Other" inspection rows."""
+    r_el = tc.find(".//" + qn("w:r"))
+    t_el = r_el.find(qn("w:t"))
+    t_el.text = text
+    t_el.set(qn("xml:space"), "preserve")
+
+
+def _find_and_remove_table_row_template(document: Document, table_index: int, label_column: int, template_label: str):
+    """Find the row in document.tables[table_index] whose label_column
+    cell text equals template_label, deep-copy it, remove the original
+    from the table, and return the copy to use as a cloning prototype -
+    for tables with a genuinely unbounded number of entries (PS1's "Other"
+    inspection items), where a fixed set of {{token}}s per slot isn't
+    enough. The template's own single "Other" row IS this prototype - it
+    always gets removed here regardless of how many (if any) actual Other
+    entries the caller ends up inserting via _insert_dynamic_table_rows.
+    Returns None if no matching row is found.
+    """
+    table = document.tables[table_index]
+    for tr in table._tbl.findall(qn("w:tr")):
+        tcs = tr.findall(qn("w:tc"))
+        label = _Cell(tcs[label_column], table).text.strip()
+        if label == template_label:
+            template_copy = deepcopy(tr)
+            tr.getparent().remove(tr)
+            return template_copy
+    return None
+
+
+def _insert_dynamic_table_rows(
+    document: Document,
+    table_index: int,
+    label_column: int,
+    order: list[str],
+    values: dict[str, list[str]],
+    template_row,
+    header_rows: int = 1,
+) -> None:
+    """Build the final row sequence of document.tables[table_index] by
+    walking `order` left to right: a key already present as a row's
+    label_column text (e.g. a fixed PS1 inspection item, already correctly
+    positioned relative to its peers by a prior _reorder_table_rows call)
+    is only ever skipped past, never moved - this function's job is
+    purely to insert *new* rows (found in `values`, keyed the same way as
+    `order`) at the right spot among rows that are already in the right
+    relative order. Each new row is a deep copy of `template_row` with its
+    cells set directly to `values[key]` (one value per column, no
+    {{token}}s - the caller already knows the final content, e.g. the
+    order number and the user's own free text for an "Other" item). A
+    no-op if template_row is None (nothing to clone from) or a key isn't
+    found in either the existing rows or `values`.
+    """
+    if template_row is None:
+        return
+
+    table = document.tables[table_index]
+    tbl = table._tbl
+    trs = tbl.findall(qn("w:tr"))
+    header_trs = trs[:header_rows]
+    data_trs = trs[header_rows:]
+
+    by_label = {}
+    for tr in data_trs:
+        tcs = tr.findall(qn("w:tc"))
+        label = _Cell(tcs[label_column], table).text.strip()
+        by_label[label] = tr
+
+    anchor = header_trs[-1] if header_trs else None
+    for key in order:
+        existing = by_label.get(key)
+        if existing is not None:
+            anchor = existing
+            continue
+
+        row_values = values.get(key)
+        if row_values is None:
+            continue
+
+        new_tr = deepcopy(template_row)
+        if anchor is None:
+            tbl.insert(0, new_tr)
+        else:
+            anchor.addnext(new_tr)
+        anchor = new_tr
+
+        tcs = new_tr.findall(qn("w:tc"))
+        for tc, value in zip(tcs, row_values):
+            _set_tc_text(tc, value)
+
+
 def fill_docx_template(
     template_path: str,
     output_path: str,
@@ -424,6 +587,9 @@ def fill_docx_template(
     keep_table_rows: dict[int, set[str]] | None = None,
     keep_table_row_label_columns: dict[int, int] | None = None,
     table_row_order: dict[int, list[str]] | None = None,
+    dynamic_table_row_templates: dict[int, str] | None = None,
+    dynamic_table_row_order: dict[int, list[str]] | None = None,
+    dynamic_table_row_values: dict[int, dict[str, list[str]]] | None = None,
 ) -> Path:
     """Copy template_path to output_path and replace {{placeholder}} tokens.
 
@@ -448,6 +614,16 @@ def fill_docx_template(
     _reorder_table_rows) - applied right after keep_table_rows, for tables
     where row order itself is user-controlled (assigning the right number
     to a row isn't enough if the row never actually moves).
+    dynamic_table_row_templates/_order/_values together handle a table
+    with a genuinely unbounded number of user-added entries (see
+    _find_and_remove_table_row_template / _insert_dynamic_table_rows):
+    for a table index present in dynamic_table_row_templates, the row
+    matching that template label is captured as a cloning prototype and
+    removed *before* keep_table_rows/table_row_order run; afterward,
+    dynamic_table_row_order (a list mixing existing rows' labels with new
+    keys) and dynamic_table_row_values (those new keys' per-column values)
+    drive building the final row sequence, inserting a fresh clone with
+    directly-set cell text - no {{token}}s - wherever a new key appears.
     Raises FileNotFoundError if the template is missing, and
     FileExistsError if output_path already exists (never overwrites).
     """
@@ -468,6 +644,17 @@ def fill_docx_template(
     if keep_sections is not None:
         _remove_unselected_sections(document, keep_sections)
 
+    # Capture+remove each dynamic table's cloning-prototype row before any
+    # other row surgery runs, so keep_table_rows/table_row_order below
+    # never have to know about it (it's never "kept" as-is - it's always
+    # replaced by zero or more freshly-built rows further down).
+    dynamic_row_templates: dict[int, Any] = {}
+    for table_index, template_label in (dynamic_table_row_templates or {}).items():
+        label_column = (keep_table_row_label_columns or {}).get(table_index, 0)
+        dynamic_row_templates[table_index] = _find_and_remove_table_row_template(
+            document, table_index, label_column, template_label
+        )
+
     for table_index, keep_row_labels in (keep_table_rows or {}).items():
         label_column = (keep_table_row_label_columns or {}).get(table_index, 0)
         _remove_unselected_table_rows(document, table_index, keep_row_labels, label_column=label_column)
@@ -475,6 +662,17 @@ def fill_docx_template(
     for table_index, row_order in (table_row_order or {}).items():
         label_column = (keep_table_row_label_columns or {}).get(table_index, 0)
         _reorder_table_rows(document, table_index, row_order, label_column=label_column)
+
+    for table_index, order in (dynamic_table_row_order or {}).items():
+        label_column = (keep_table_row_label_columns or {}).get(table_index, 0)
+        _insert_dynamic_table_rows(
+            document,
+            table_index,
+            label_column,
+            order,
+            (dynamic_table_row_values or {}).get(table_index, {}),
+            dynamic_row_templates.get(table_index),
+        )
 
     skip_warning_keys = frozenset((bullet_lists or {}).keys())
 

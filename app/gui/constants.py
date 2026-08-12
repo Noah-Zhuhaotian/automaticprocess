@@ -50,8 +50,20 @@ SPECIFICATION_NUMERIC_FIELDS: dict[str, list[tuple[str, str]]] = {
         ("metal_deck_topping_strength_var", "Metal deck topping (MPa):"),
     ],
     "MASONRY BLOCKWORK": [
-        ("grout_strength_var", "Grout, Zone C (MPa):"),
+        ("grout_strength_var", "Grout strength:"),
     ],
+}
+
+# grout_strength_var (above) is a dropdown, not a free-text numeric entry -
+# its chosen value is substituted whole into Specifications.docx's
+# "...compressive strength of {{grout_strength}}, using..." sentence (the
+# template used to hardcode " MPa (Zone C)" after the token; that literal
+# text was removed from the template since each option below already spells
+# out its own unit + zone). Keyed by StringVar attribute name so
+# specification_step.py can tell which numeric fields need a Combobox
+# instead of a plain Entry.
+SPECIFICATION_DROPDOWN_FIELDS: dict[str, list[str]] = {
+    "grout_strength_var": ["17.5 MPa (Zone B)", "20 MPa (Zone C)", "25 MPa (Zone D)"],
 }
 
 # Symbols used for tick-box placeholders in the Word templates.
@@ -114,14 +126,12 @@ INSPECTION_ITEMS: list[tuple[str, str, str]] = [
     ),
 ]
 
-# The "Other" row's Item-of-inspection cell holds the literal token text
-# "{{inspection_other_description}}" in the template - keep_table_rows
-# matching runs *before* token replacement, so this is exactly what that
-# cell's text still reads at match time (same idea as the fixed items
-# above being matched on their own permanent item text). The normal
-# token-replacement pass then overwrites it with the user's free-text
-# value, same as every other token - there's no separate sentinel step.
-INSPECTION_OTHER_KEY = "other"
+# The template's single "Other" row's Item-of-inspection cell holds this
+# literal token text - it's used to find and remove that row as a cloning
+# prototype (see word_filler's _find_and_remove_table_row_template), since
+# the user can add any number of Other items, not just one. Matching runs
+# before token replacement, so this is exactly what the cell's text still
+# reads at match time.
 INSPECTION_OTHER_LABEL = "{{inspection_other_description}}"
 INSPECTION_ITEM_LABELS: dict[str, str] = {key: item_text for key, item_text, _time_frame in INSPECTION_ITEMS}
 

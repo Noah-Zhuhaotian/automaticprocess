@@ -33,45 +33,121 @@ stale step numbering after a first-run Settings step - both found by
 the user testing the app), `4a71507` (independent Compliance/Alternative
 checkboxes, Site verification field, LBP/`{{scope}}` genuine bullet
 lists, PS1's `{{scope}}` shading fix, LBP page break before "WAIVERS AND
-MODIFICATIONS" - see that commit's message and git history for the full
-per-item detail, since it's condensed here to make room for *this*
-handoff's own work).
+MODIFICATIONS"), `2f19aec` (new "Inspection Schedule" wizard step for
+PS1's Schedule of Inspections table - pick which of 7 typical items
+apply, add one "Other" item, order everything with Move Up/Move Down;
+template got the 5 previously-missing fixed items added; a real bug
+where reordering changed the No. values but not the physical row
+order was caught by the user's own click-through and fixed with
+`_reorder_table_rows` - see prior handoff / that commit's message and
+git history for the full per-item detail, since it's condensed here to
+make room for *this* handoff's own work, which builds directly on it).
 
 *This* handoff is **not yet committed** - `app/core/word_filler.py`,
-`app/gui/constants.py`, `app/gui/main_window.py`, the new
-`app/gui/steps/inspection_step.py`, `app/gui/steps/review_step.py`, and
-`resources/templates/PS1 Producer Statement.docx` are modified/added in
-the working tree:
+`app/gui/constants.py`, `app/gui/steps/inspection_step.py`, and
+`app/gui/steps/review_step.py` are modified in the working tree:
 
-1. **New "Inspection Schedule" wizard step**, feeding PS1's "Schedule 3 -
-   Schedule of Inspections" table. The user checks which of 7 typical
-   inspection items apply (previously only 2 of the 7 existed in the
-   template at all - see "Word filling" below), optionally adds one
-   free-text "Other" item, and orders the selected items with Move Up/
-   Move Down buttons against a live-updating `tk.Listbox` - that order
-   becomes the table's No. column. Requested because the PS1 Input step
-   was already visually full and this is conceptually a separate concern
-   (which inspections apply), so - like Waivers/Specification/B2 Letter
-   before it - it got its own step rather than being squeezed in.
-   `INSPECTION_ITEMS`/`INSPECTION_OTHER_KEY`/`INSPECTION_OTHER_LABEL`/
-   `INSPECTION_ITEM_LABELS`/`PS1_INSPECTION_TABLE_INDEX` in
-   `constants.py`; new `app/gui/steps/inspection_step.py`
-   (`InspectionStepMixin`); wired into `main_window.py` (composition,
-   `_init_vars`, `_build_step_list`, right after PS1 Input) and
-   `review_step.py` (`_build_inspection_replacements`,
-   `_inspection_row_order_labels`, `_reset_for_new_project`). See "Word
-   filling" for the template mechanism and "What Didn't Work" for two real
-   bugs this caught before it shipped - one from headless testing, one
-   from **the user's own click-through**, which caught something headless
-   testing missed entirely: the No. tokens were correct but the table
-   *rows themselves* stayed in template order (only assigning numbers, not
-   moving rows), so a reordered list showed the right numbers next to the
-   wrong rows. Fixed with a new `_reorder_table_rows` in `word_filler.py`
-   (physically moves each surviving `<w:tr>` into the chosen sequence,
-   wired through `fill_docx_template` as `table_row_order: dict[int,
-   list[str]] | None`) - `review_step.py`'s `_inspection_row_order_labels`
-   now returns an ordered list that drives both which rows survive (as a
-   set, for `keep_table_rows`) and the physical order they end up in.
+1. **The Inspection Schedule step's "Other" item is no longer limited to
+   one - the user can Add/Remove any number of them.** Previously a
+   single checkbox gated one fixed pair of Description/Time-frame
+   entries; now an "Add Other" button appends a new entry (its own
+   Description/Time-frame `ttk.Entry` pair plus a "Remove" button) to a
+   dynamically-growing list, each entry getting a generated id
+   (`other_1`, `other_2`, ...) that participates in `self.inspection_order`
+   exactly like a fixed item's key - Other entries can be freely
+   interleaved with fixed items in the Move Up/Down order, not just
+   appended at the end. `self.inspection_other_items_by_id: dict[str,
+   dict[str, tk.StringVar]]` replaces the old single
+   `inspection_other_var`/`_description_var`/`_time_frame_var` trio (see
+   [inspection_step.py](app/gui/steps/inspection_step.py)).
+2. **The PS1 template needed no changes for this** - its existing single
+   "Other" row already serves as a reusable *cloning prototype* rather
+   than a single fixed slot: `word_filler.py` gained
+   `_find_and_remove_table_row_template` (captures a deep copy of the row
+   matching a literal token label, then removes the original
+   unconditionally - it's never "kept" as-is anymore) and
+   `_insert_dynamic_table_rows` (walks a full order list mixing existing
+   rows' labels with new keys, cloning the captured template and setting
+   its cells' text *directly* - no `{{token}}`s - for every new key,
+   inserting each one at the right spot among the already-correctly-
+   ordered fixed rows). Wired into `fill_docx_template` as three new
+   parameters: `dynamic_table_row_templates`/`_order`/`_values` (all
+   `dict[int, ...]`, keyed by table index, mirroring the existing
+   `keep_table_rows`/`table_row_order` convention). See "Word filling"
+   for the full mechanism and why fixed items still use the older
+   token-based approach unchanged (no need to touch what already works).
+3. **`review_step.py`'s `_on_create` documents list changed from
+   positional tuples to dicts** (`{"template": ..., "output": ...,
+   "keep_table_rows": ..., ...}`, read with `.get()`) - the PS1 entry
+   alone now needs 6 of `fill_docx_template`'s optional table-editing
+   parameters, all `None` for every other document; a 6-element
+   all-`None`-except-one-row tuple was already unreadable before this
+   handoff added 3 more fields on top. New `_build_inspection_table_data()`
+   replaces `_inspection_row_order_labels()`, returning everything
+   `_on_create` needs in one pass: which fixed rows survive, their
+   relative order, the full interleaved order (fixed + Other), and each
+   Other id's resolved `[No, description, time frame]` values.
+
+4. **`Specifications.docx`'s "Grout" field (Specification step, MASONRY
+   BLOCKWORK section) is now a fixed 3-option dropdown, not free-text
+   MPa entry.** `grout_strength_var` used to be a plain `ttk.Entry`
+   sharing the same rendering code as every other
+   `SPECIFICATION_NUMERIC_FIELDS` entry; the field's label changed from
+   "Grout, Zone C (MPa):" to "Grout strength:" and the template's own
+   sentence used to hardcode " MPa (Zone C)" right after the token, so a
+   plain number like "20" read as "...strength of 20 MPa (Zone C)...".
+   The user wants the *whole* value (number + unit + zone) picked from a
+   short list instead: `17.5 MPa (Zone B)`, `20 MPa (Zone C)`, `25 MPa
+   (Zone D)` (the middle option's zone letter was corrected by the user
+   directly in `constants.py` after an initial guess of "Zone B" for both
+   the first two options). New `SPECIFICATION_DROPDOWN_FIELDS: dict[str,
+   list[str]]` in `constants.py` maps a numeric field's `StringVar`
+   attribute name to its option list; `specification_step.py` checks this
+   dict when building each field and renders a `state="readonly"`
+   `ttk.Combobox` instead of a `ttk.Entry` for any name present in it
+   (falling back to `"disabled"` when its section is unchecked, matching
+   the existing Entry gating idiom - Combobox just uses
+   `"readonly"`/`"disabled"` instead of `"normal"`/`"disabled"`). The
+   template itself needed a one-off migration (same copy-verify-then-
+   real-file workflow as every other template surgery here): the run
+   holding literal " MPa (Zone C), " right after `{{grout_strength}}` had
+   its text changed to just ", ", since the dropdown's own value now
+   supplies the unit and zone. No other `SPECIFICATION_NUMERIC_FIELDS`
+   entry changed - they're all still plain numeric `Entry` fields, this
+   was purely additive (one new dict, checked before falling back to the
+   existing behavior).
+5. **B2 Letter.docx gained `{{street}}`, `{{suburb}}`, `{{town}}` tokens
+   (typed directly into the template in Word by the user, not by a
+   migration script) - and they weren't substituting.** All three values
+   were already flowing into the shared `replacements` dict from a much
+   earlier handoff (see "Address → Street/Suburb/Town split" below) - the
+   *dict* side needed zero changes. The actual bug was structural: Word's
+   autocomplete/spellcheck had glued runs unevenly while the user typed
+   `{{street}}, {{suburb}}, {{town}}`, leaving one run reading `"{{street}}, {{"`
+   (a full token *plus* the next token's opening braces, all in one run)
+   instead of a clean break after `}}`. `_run_range_for_span` requires a
+   token's span to land exactly on run boundaries so only whole runs ever
+   get spliced (see "Word filling" below); `{{street}}` sat at the *start*
+   of that run but ended mid-run, so it silently fell into the "doesn't
+   align, leaving as-is" branch and stayed as literal text in every
+   generated `.docx`.
+6. **Fixed generally in `word_filler.py`, not patched just for this one
+   paragraph** - three new helpers (`_run_is_splittable`, `_split_run`,
+   `_ensure_run_boundary`) let `_replace_in_paragraph` split a straddling
+   run into two sibling runs with identical formatting (`rPr` deep-copied)
+   right at the point a token needs a boundary, before re-checking
+   alignment - a no-op wherever alignment already holds (i.e. every
+   template/token that worked before this change still takes the exact
+   same code path, confirmed by a full six-document regression run
+   producing zero new warnings). Splitting only ever happens on a run
+   that's provably safe to reconstruct through python-docx's own
+   `Run.text` getter/setter round-trip (plain text plus
+   tab/break/carriage-return/non-breaking-hyphen children only, checked by
+   `_run_is_splittable`) - a run holding a drawing, field code, or
+   anything else `Run.text` doesn't fully capture is left alone and still
+   falls through to the "doesn't align" warning rather than risk silently
+   dropping content. See "Word filling" for where this plugs into the
+   existing right-to-left processing loop.
 
 `67ce123`'s own changes (historical record, already pushed):
 
@@ -261,15 +337,20 @@ layout" above:
    `LABEL_WIDTH` on every label — both were tuned live against user
    screenshots; if asked to adjust spacing again, expect another
    iteration or two of "too wide/too tight" feedback.
-4. **Inspection Schedule** (this handoff) — PS1's "Schedule 3 - Schedule of
+4. **Inspection Schedule** (previous handoff `2f19aec`; unlimited "Other"
+   items added this handoff) — PS1's "Schedule 3 - Schedule of
    Inspections" table. A checkbox per typical inspection item
-   (`INSPECTION_ITEMS`, 7 items) plus an "Other" checkbox gating a free-text
-   Item-of-inspection/Time-frame pair, at least one item required overall
-   (Other additionally requires both its own fields filled once ticked).
-   Selected items appear in a `tk.Listbox` (`self.inspection_order`, the
-   single source of truth for both inclusion and sequence) with Move
-   Up/Move Down buttons re-sorting it - that final order becomes the
-   table's No. column. See "Word filling" for the template mechanism.
+   (`INSPECTION_ITEMS`, 7 items), at least one item required overall.
+   **"Other" items are unbounded** - an "Add Other" button appends a new
+   Description/Time-frame `ttk.Entry` pair (each with its own "Remove"
+   button) to `self.inspection_other_items_by_id`, every entry's fields
+   required once added. Selected fixed items and every Other entry all
+   appear together in one `tk.Listbox` (`self.inspection_order`, the
+   single source of truth for both inclusion and sequence, mixing fixed
+   item keys with Other ids) with Move Up/Move Down buttons re-sorting it
+   - Other items can be freely interleaved with fixed ones, not just
+   appended at the end - that final order becomes the table's No. column
+   and physical row order. See "Word filling" for the template mechanism.
 5. **Waivers and Modifications** (previous handoff, `4814414`) — a step dedicated to the
    LBP form's "WAIVERS AND MODIFICATIONS" section: a Yes/No radio
    (`waivers_required_var`) for "Are waivers or modifications of the
@@ -350,6 +431,19 @@ content-editing mechanisms, in this order:
    paragraph with 3 tokens) — matches are processed **right-to-left** so
    earlier (leftward) run-index calculations, computed once from an
    unmutated snapshot, stay valid as later ones get spliced out.
+   **This handoff:** exact run-boundary alignment isn't guaranteed just
+   because a token is hand-typed directly into Word (as opposed to
+   migrated in by a script) - Word's autocomplete can leave a token
+   sharing a run with unrelated neighboring text (see "B2 Letter.docx's
+   street/suburb/town tokens" below). When `_run_range_for_span` first
+   comes back `None`, `_replace_in_paragraph` now calls
+   `_ensure_run_boundary` (which calls `_split_run` when the straddling
+   run is safe to split - `_run_is_splittable` checks it holds only
+   plain-text/tab/break content, nothing `Run.text` can't losslessly
+   round-trip) for both the token's start and end position, then re-checks
+   alignment once before giving up and logging the same "doesn't align"
+   warning as before. A no-op for every already-aligned token - the fast
+   path nothing else changed.
 2. **Real Word checkbox content controls** (`_apply_checkbox_controls` /
    `_set_checkbox_state`) — these are genuine `<w:sdt>` +
    `<w14:checkbox>` structured document tags, i.e. actually
@@ -565,6 +659,44 @@ Row *content* was explicitly not to be changed - this only controls
 which rows exist, matching the pattern of "structural cut before token
 replacement" that Specification established for whole sections.
 
+**B2 Letter.docx's `{{street}}`/`{{suburb}}`/`{{town}}` tokens (this
+handoff):** the user typed these three tokens directly into the template
+in Word themselves (no migration script involved, unlike every other
+token addition in this project) as one run of text, `{{street}}, {{suburb}}, {{town}}`.
+No `word_filler.py`/`review_step.py` change was needed for the *values* -
+`street`/`suburb`/`town` were already in the shared `replacements` dict
+since the earlier Address→Street/Suburb/Town split, and every document
+gets the same dict. The tokens silently weren't substituting, though: a
+token scan first (see "What Worked" for why this is always the first
+move on a "should just work" report) found `{{street}}` sitting in a run
+that also held the *next* token's opening braces (`'{{street}}, {{'`, one
+run - Word's autocomplete evidently didn't break the run cleanly after
+`}}`), so `_run_range_for_span` saw the token's end position landing
+mid-run rather than on a boundary and silently left it as literal text.
+Fixed generally, not just for this paragraph - see mechanism 1 in "Word
+filling" above (`_ensure_run_boundary`/`_split_run`/`_run_is_splittable`).
+Confirmed end-to-end against a real generated B2 Letter document: the
+paragraph reads `"123 Main St, Riccarton, Christchurch"` with every run's
+original bold formatting intact.
+
+**Specifications.docx's Grout field is now a 3-option dropdown, not free
+numeric entry (this handoff):** previously `grout_strength_var` was a
+plain `Entry` like every other `SPECIFICATION_NUMERIC_FIELDS` field, and
+the template's own sentence hardcoded " MPa (Zone C)" right after the
+token. The user wants the whole value (number + unit + zone) chosen from
+`17.5 MPa (Zone B)` / `20 MPa (Zone C)` / `25 MPa (Zone D)` instead - so
+the template's hardcoded " MPa (Zone C), " text (a single run, confirmed
+via a raw-run dump before touching it) was migrated down to just ", ",
+and a new `SPECIFICATION_DROPDOWN_FIELDS: dict[str, list[str]]` constant
+lets `specification_step.py` render a `readonly` `ttk.Combobox` instead
+of an `Entry` for any field name present in it - one dict lookup added to
+the existing field-building loop, every other numeric field is untouched.
+Confirmed against a real generated Specifications document: "...minimum
+28-day compressive strength of 20 MPa (Zone B), using coarse
+aggregate..." (tested before the user's own follow-up edit corrected the
+middle option's zone letter from B to C in `constants.py` - the mechanism
+itself doesn't care what the option strings say, so this remains valid).
+
 **PS1's "Schedule 3 - Schedule of Inspections" table (this handoff) - the
 same row-removal idea, but matched on a *different* column, plus a
 per-row order token:** the table only had 2 of the 7 typical inspection
@@ -614,11 +746,44 @@ duplicate, so no new mechanism was needed beyond what `_insert_bullet_
 paragraph_after` already relies on for the same reason. Wired through
 `fill_docx_template` as `table_row_order: dict[int, list[str]] | None`,
 using `keep_table_row_label_columns` for the column exactly like
-`keep_table_rows` does. `review_step.py`'s `_inspection_row_order_labels()`
-replaced the old `_inspection_keep_labels()` - one ordered list now drives
-both `keep_table_rows` (via `set(...)`) and `table_row_order` directly, so
-there's only one place that translates `self.inspection_order` into
-template-facing labels.
+`keep_table_rows` does. (`review_step.py`'s translation point for this
+was `_inspection_row_order_labels()` at the time - see below for what
+replaced it once "Other" stopped being a single fixed row.)
+
+**"Other" items are unlimited (this handoff) - the fixed-item mechanism
+above is unchanged, dynamic rows are a separate, additional mechanism
+layered next to it:** rather than extend the token-per-slot approach to
+some arbitrary N "Other" tokens, the template's existing single "Other"
+row (Item cell still holding the literal text
+`{{inspection_other_description}}`) is now treated purely as a **cloning
+prototype**. `_find_and_remove_table_row_template` runs *before* any other
+row surgery - finds the row matching a literal label, deep-copies it, and
+unconditionally removes the original (it's never "kept" as one of the
+survivors anymore, unlike the fixed items). `_insert_dynamic_table_rows`
+then runs *after* `_remove_unselected_table_rows`/`_reorder_table_rows`
+have settled the fixed rows into their correct relative order: it walks a
+full `order` list that mixes existing rows' labels (fixed items - just
+skipped past, already correctly positioned) with brand-new keys (Other ids
+- not skipped, since they were never a row) that only exist in a `values`
+dict, cloning the captured template and writing each new key's `[No,
+description, time frame]` **directly into the cells as literal text - no
+{{token}}s at all**, immediately after whichever row currently precedes
+it. This is what makes Other items able to sit *anywhere* in the final
+order, including between two fixed items, rather than only ever being
+appended at the end. `fill_docx_template` gained three more parameters for
+this - `dynamic_table_row_templates`/`_order`/`_values`, all
+`dict[int, ...]` keyed by table index like the existing table parameters.
+`review_step.py`'s `_build_inspection_table_data()` replaced
+`_inspection_row_order_labels()`, computing all four pieces
+`_on_create` needs in one pass over `self.inspection_order`: which fixed
+items' labels survive (`keep_table_rows`), their relative order
+(`table_row_order`), the full interleaved order mixing fixed labels with
+Other ids (`dynamic_table_row_order`), and each Other id's resolved
+`[No, description, time frame]` (`dynamic_table_row_values`) - since a
+`str(position)` No. value is computed once, in the same loop, for
+*every* selected item regardless of whether it's fixed (goes into a
+`{{token}}`) or Other (goes directly into `values`), there's no risk of
+the two numbering schemes drifting apart.
 
 ### Step 1 logic ([app/core/folder_creator.py](app/core/folder_creator.py))
 Folder name = `"{Job Number} - {Street}"` (was `{Address}` before the
@@ -797,6 +962,21 @@ partial mess.
   in what state it was willing to *set up* - worth designing table/order
   verification specifically around "does the Nth physical row equal the
   Nth expected item," not just "is the right value stored somewhere."
+- **Re-checking a "just replace the token" report against the actual raw
+  XML before believing it's simple.** The B2 Letter street/suburb/town
+  request sounded like it needed nothing beyond adding three keys to a
+  dict that already existed - dumping the paragraph's actual runs first
+  (instead of assuming it would just work) found the real, structural
+  cause (a run straddling two tokens) in one step, the same "inspect the
+  XML, don't guess" instinct from the original PS1 checkbox/bullet work
+  paying off again on a much smaller case.
+- **A full six-document regression run (not just the one changed
+  template) is the right bar for any change to `_replace_in_paragraph`
+  specifically**, since it's the one mechanism every template and nearly
+  every token goes through - ran the real `MainWindow` end to end with
+  every field populated after adding the run-splitting fallback and
+  confirmed zero new "does not align"/other warnings anywhere, not just
+  that the B2 Letter paragraph in question now reads correctly.
 
 ## What Didn't Work / Avoid Repeating
 
@@ -933,6 +1113,37 @@ partial mess.
   just the order value stored somewhere** - a plausible-looking correct
   token is not proof the visual result is correct when position and value
   are two separate things that both have to move together.
+- **A headless test script's `module.load_settings = lambda: {...}`
+  monkeypatch silently did nothing, and the test wrote real files to the
+  user's actual configured NAS drive as a result.** `main_window.py` does
+  `from app.config.settings import load_settings` at import time, which
+  binds the *function object itself* into `main_window`'s own namespace -
+  patching `app.config.settings.load_settings` afterward (the module the
+  name was imported *from*) doesn't change what `main_window.py` calls,
+  since it already holds its own separate reference. The fix is to patch
+  the name where it's actually looked up - `app.gui.main_window.load_settings
+  = lambda: {...}` (i.e. patch the *importing* module, not the *defining*
+  one) - a standard `unittest.mock.patch` gotcha, but there's no mocking
+  framework in this project's ad hoc test scripts to catch it by
+  convention. The mistake wasn't caught until a second `MainWindow()` run
+  raised `FileExistsError` for a folder that "shouldn't" have existed yet
+  (see the B2 Letter/grout dropdown work above) - the first run had
+  already silently created a real `"J123 - 123 Main St"` project (folders
+  plus all six documents) on `D:\automaticeng\...`, the user's real
+  configured Engineer/Drafting/Admin drives. Caught via
+  `Test-Path`/`Get-ChildItem` against the real drive paths (read from
+  `app.config.settings.load_settings()` directly, not assumed), confirmed
+  it was exactly the test's synthetic data (job number `J123`, "Client
+  X", etc. - nothing a real user would have entered) before deleting it
+  with `Remove-Item -Recurse -Force`, then re-verified with `Test-Path`
+  that all three drive locations were clean. **Any test script for this
+  app must patch `load_settings` on the module that imported it
+  (`app.gui.main_window.load_settings`), and should print/assert
+  `app.settings.get("engineer_drive")` right after constructing
+  `MainWindow` and *before* calling `_on_create()`, to confirm a temp
+  directory is actually in play before anything gets written** - the cost
+  of skipping that check is real writes to the user's real project
+  drives, not just a wrong assertion in a throwaway script.
 
 ## Next Steps
 
@@ -950,13 +1161,19 @@ partial mess.
    checkboxes/tables/section removal rendering correctly. An earlier
    attempt at simulating clicks/keystrokes to do this closed the app
    unexpectedly (see "What Didn't Work") - keep preferring the user's
-   own click-through over more coordinate-based automation. **The new
-   Inspection Schedule step especially** - the Move Up/Move Down
-   `tk.Listbox` interaction has only been driven programmatically
-   (`.selection_set()` + calling the button's command directly), never
-   actually clicked with a mouse, so its real feel (does a click land on
-   the right row, is the button layout sensible next to the listbox) is
-   still unconfirmed.
+   own click-through over more coordinate-based automation. The
+   Inspection Schedule step's Move Up/Move Down/single-"Other" flow was
+   confirmed by the user's own click-through (`2f19aec`) - **this
+   handoff's unlimited-"Other" Add/Remove buttons have only been driven
+   programmatically so far** (calling `_add_inspection_other_item()`/
+   `_remove_inspection_other_item()` directly), never actually clicked -
+   worth another real pass, especially the visual layout once several
+   Other rows stack up under the fixed checkboxes. **Also unclicked so
+   far:** the Specification step's new Grout dropdown (readonly
+   `ttk.Combobox` - confirmed programmatically that it builds/enables/
+   disables correctly, never actually opened and picked from in a running
+   window) and the B2 Letter street/suburb/town fix (confirmed via the
+   generated `.docx`, not by looking at the document in Word itself).
 2. **Consent Document folder** (`06 Consent Document`) now gets PS1, LBP
    form, Calculation Statement, Specifications, and B2 Letter - probably
    everything the user meant by "other documents belong there too" when
