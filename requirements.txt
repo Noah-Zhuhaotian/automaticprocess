@@ -4,7 +4,5 @@ python-docx>=1.1.0      # Step 2: fill Word documents
 # Packaging
 pyinstaller>=6.0.0       # build exe
 
-# Step 3 (website form filling) dependencies, enable once the site's
-# interaction method (browser automation vs. API) is decided
-# selenium>=4.0.0
-# requests>=2.31.0
+# Step 3: MinuteDock API sync
+requests>=2.31.0

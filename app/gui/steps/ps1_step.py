@@ -68,7 +68,7 @@ class Ps1StepMixin:
 
         ttk.Label(frame, text="Council name:", width=LABEL_WIDTH).grid(row=row, column=0, sticky="w", pady=4)
         council_row = ttk.Frame(frame)
-        council_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=4)
+        council_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=4, padx=8)
         self._council_combobox = ttk.Combobox(
             council_row,
             textvariable=self.council_name_var,
@@ -118,7 +118,7 @@ class Ps1StepMixin:
         all_part_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=(12, 4))
         for col, option in enumerate(ALL_PART_OPTIONS):
             ttk.Radiobutton(all_part_frame, text=option, variable=self.all_part_var, value=option).grid(
-                row=0, column=col, sticky="w", padx=(0, 16)
+                row=0, column=col, sticky="w", padx=(0, 20)
             )
         row += 1
 

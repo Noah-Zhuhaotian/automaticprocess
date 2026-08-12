@@ -10,14 +10,19 @@ Steps:
    plus an optional free-text "Other" item, and their order.
 4. Waivers and Modifications - the LBP form's YES/NO waiver section.
 5. Specification - pick which Specifications.docx sections apply.
-6. B2 Letter - placeholder, details TBD.
-7. Review & Create - single Create button that generates everything:
-   project folders plus the Project register, PS1, LBP form, Calculation
-   Statement, and Specifications documents.
+6. B2 Letter - which material rows apply.
+7. MinuteDock - only shown when a MinuteDock Personal Access Token is
+   configured in Settings; billable/rate settings for the MinuteDock
+   Project this job will sync to.
+8. Review & Create - single Create button that generates everything:
+   project folders, the Word documents, and (if a token is configured) the
+   matching MinuteDock Contact/Project.
 
-There's no separate "fill the website" step: the website only needs data
-already collected earlier in the wizard, so it's produced by the same
-Create action (once Step 3/web_filler.py is implemented).
+There's no separate "submit to MinuteDock" step or button: it reuses data
+already collected earlier in the wizard and rides along inside the same
+Create action (app/core/web_filler.py) - only the billable/rate *input*
+(step 7 above) gets its own step, since that's project-specific data
+nothing else in the wizard collects.
 
 Each step's fields, build/validate logic, and per-step tk variables live
 in their own mixin under app/gui/steps/ - this class just composes them
@@ -37,6 +42,7 @@ from app.config.settings import load_settings
 from app.gui.steps.b2_letter_step import B2LetterStepMixin
 from app.gui.steps.general_step import GeneralStepMixin
 from app.gui.steps.inspection_step import InspectionStepMixin
+from app.gui.steps.minutedock_step import MinuteDockStepMixin
 from app.gui.steps.ps1_step import Ps1StepMixin
 from app.gui.steps.review_step import ReviewStepMixin
 from app.gui.steps.settings_step import SettingsStepMixin
@@ -52,6 +58,7 @@ class MainWindow(
     WaiversStepMixin,
     SpecificationStepMixin,
     B2LetterStepMixin,
+    MinuteDockStepMixin,
     ReviewStepMixin,
     tk.Tk,
 ):
@@ -77,7 +84,7 @@ class MainWindow(
         header_frame.pack(fill="x", padx=16, pady=(14, 6))
         self.header_var = tk.StringVar()
         ttk.Label(header_frame, textvariable=self.header_var, font=("Segoe UI", 12, "bold")).pack(side="left")
-        ttk.Button(header_frame, text="File path", command=self._open_settings_dialog).pack(side="right")
+        ttk.Button(header_frame, text="Settings", command=self._open_settings_dialog).pack(side="right")
 
         self.content_frame = ttk.Frame(self)
         self.content_frame.pack(fill="both", expand=True, padx=16, pady=4)
@@ -100,6 +107,7 @@ class MainWindow(
         self._init_waivers_vars()
         self._init_specification_vars()
         self._init_b2_letter_vars()
+        self._init_minutedock_vars()
 
     # ---------- step list / navigation ----------
     def _build_step_list(self) -> list[dict[str, Any]]:
@@ -134,6 +142,14 @@ class MainWindow(
         steps.append(
             {"title": "B2 Letter", "build": self._build_b2_letter_step, "validate": self._validate_b2_letter_step}
         )
+        if self.settings.get("minutedock_access_token", "").strip():
+            steps.append(
+                {
+                    "title": "MinuteDock",
+                    "build": self._build_minutedock_step,
+                    "validate": self._validate_minutedock_step,
+                }
+            )
         steps.append({"title": "Review & Create", "build": self._build_review_step, "validate": None})
         return steps
 

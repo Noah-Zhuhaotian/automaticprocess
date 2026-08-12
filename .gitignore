@@ -8,6 +8,7 @@ venv/
 # Build artifacts
 build/
 dist/
+build_scripts/output/
 *.spec.bak
 *.egg-info/
 

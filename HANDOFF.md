@@ -2,9 +2,9 @@
 
 ## Goal
 
-Build a Windows desktop Python app (tkinter GUI, packaged as an exe via
-PyInstaller later, msi possibly after that) with three features,
-requested to be built one step at a time:
+Build a Windows desktop Python app (tkinter GUI, packaged as a Windows
+installer via PyInstaller + Inno Setup - see "Packaging" below) with
+three features, requested to be built one step at a time:
 
 1. **Create folders** — auto-create a project folder on each of three NAS
    drives (Engineer, Drafting, Admin), with fixed subfolders on the
@@ -13,9 +13,12 @@ requested to be built one step at a time:
    PS1 Producer Statement, LBP form, Calculation Statement,
    Specifications, B2 Letter) from one shared data-entry wizard.
 3. **Fill timesheet website** — auto-submit the same data to a website
-   that records work hours/project info. Not started — there is no
-   separate "fill the website" UI step; it's meant to reuse data already
-   collected earlier in the wizard.
+   that records work hours/project info. The target site is **MinuteDock**
+   (https://minutedock.com) - implemented this handoff via its public REST
+   API. There is no separate "fill the website" UI step for the sync
+   itself; it rides along inside the same Create click and reuses data
+   already collected earlier in the wizard, per the original plan - see
+   "Feature 3: MinuteDock sync" below.
 
 All code, comments, and UI text must be in **English** (the user
 communicates in Chinese but explicitly asked for an English codebase).
@@ -41,11 +44,165 @@ where reordering changed the No. values but not the physical row
 order was caught by the user's own click-through and fixed with
 `_reorder_table_rows` - see prior handoff / that commit's message and
 git history for the full per-item detail, since it's condensed here to
-make room for *this* handoff's own work, which builds directly on it).
+make room for later handoffs' own work, which builds directly on it),
+`f538915` (unlimited Inspection Schedule "Other" items; Specification's
+Grout field became a 3-option dropdown; B2 Letter's user-added
+street/suburb/town tokens fixed via a general run-boundary-splitting fix
+in `word_filler.py` - see that commit's own section below for detail).
 
-*This* handoff is **not yet committed** - `app/core/word_filler.py`,
-`app/gui/constants.py`, `app/gui/steps/inspection_step.py`, and
-`app/gui/steps/review_step.py` are modified in the working tree:
+*This* handoff is **not yet committed** - MinuteDock API sync (Feature 3):
+`app/core/minutedock_client.py` (new), `app/core/web_filler.py` (stub
+replaced), `app/gui/steps/minutedock_step.py` (new),
+`app/gui/steps/settings_step.py`, `app/gui/steps/review_step.py`,
+`app/gui/main_window.py`, `app/config/settings.py`, and
+`requirements.txt` are modified/added in the working tree:
+
+1. **The user identified the target timesheet website (MinuteDock) and
+   provided its OpenAPI 3.1.1 spec**, plus a screenshot of MinuteDock's own
+   "New Project" page (a "Project is billable" checkbox, "Use contact
+   rates" vs "Set a standard rate for this project" radio + a `$/hour`
+   field). They asked for two things beyond just "make it work": a place to
+   enter login credentials, and that per-project rate control. Before
+   writing any code, three genuinely open design questions were resolved
+   with the user via `AskUserQuestion` (not guessed at, since MinuteDock's
+   API only supports Bearer-token auth, not literal username/password):
+   - **Auth**: a MinuteDock **Personal Access Token** (an OAuth access
+     token the user generates once from their own MinuteDock profile →
+     "Manage Access Tokens", ready to use immediately, no
+     application-registration/authorization-code flow needed) - not a
+     literal username/password, which the API doesn't support at all.
+   - **Trigger**: automatic, inside the same "Create" click that already
+     makes folders and fills Word docs - no separate "submit to website"
+     step/button. This matches what `main_window.py`'s own module
+     docstring already said was the intended design before Step 3 existed.
+   - **Contact resolution**: match an existing MinuteDock Contact by the
+     wizard's "Client info" field against `Contact.name`; create one
+     automatically if no match.
+   A full implementation plan (this exact breakdown) was written and
+   approved via plan mode before any file was touched - see
+   `C:\Users\NoahZ\.claude\plans\shimmering-popping-charm.md` for the
+   original plan document if it's still around; its content is folded into
+   this handoff entry.
+2. **New `app/core/minutedock_client.py`** - a thin, business-logic-free
+   wrapper around `https://minutedock.com/api/v1`. Every call sends
+   `Authorization: Bearer <token>`. `find_or_create_contact`/
+   `find_or_create_project` are genuinely **find-or-create**, not
+   create-only: `_on_create` in `review_step.py` can plausibly run twice
+   for the same job (e.g. retrying after an earlier Word-doc-fill failure
+   left folders already created - see existing "Partial success" handling),
+   and find-or-create means a retry never creates a duplicate Contact or
+   Project. Matching is **exact, case-insensitive, trimmed** - deliberately
+   not substring/"contains" matching, since e.g. "Smith" fuzzy-matching
+   "Smith Family Trust" would silently attach a job to the wrong client.
+   No pagination for `GET /contacts`/`GET /projects` in this version (a
+   single small engineering firm's account is assumed to fit in one
+   unpaginated page) - documented as a known v1 limitation in the module
+   docstring rather than guessed at.
+   **A real discrepancy between the OpenAPI spec and the live API was
+   caught by actually calling it**, not just trusting the spec: the spec's
+   documented error shape is `{"error": "...", "status": ...}`, but a real
+   403 response (tested with a deliberately bogus token, a safe read-only
+   call) came back as `{"status": "error", "message": "..."}` instead -
+   `_request`'s error-message extraction checks both `error` and `message`
+   keys for exactly this reason. Also note: MinuteDock's own "New Project"
+   UI has a "Reference" text field with **no equivalent in the `Project`
+   schema** (that's an Invoice-level field instead) - intentionally not
+   sent anywhere, flagged in a comment so it isn't "fixed" into the wrong
+   field later.
+3. **`app/core/web_filler.py`'s long-standing `NotImplementedError` stub is
+   gone** - `sync_to_minutedock()` is the business-logic layer on top of
+   the client: find-or-create the Contact, then find-or-create the Project
+   under it, return both.
+4. **New "MinuteDock" wizard step** (`app/gui/steps/minutedock_step.py`,
+   `MinuteDockStepMixin`) - a "Project is billable" checkbutton plus a
+   "Use contact rates"/"Set a standard rate for this project" radio gating
+   a `$/hour` entry (same enable/disable-and-clear gating idiom as
+   `waivers_step.py`'s `_on_waivers_required_change`). **Only appended to
+   `self.steps` in `main_window.py`'s `_build_step_list()` when a
+   MinuteDock token is configured** (`if
+   self.settings.get("minutedock_access_token", "").strip():` - same
+   conditional-step precedent as the first-run Settings step), so Step 3
+   stays entirely invisible/optional for anyone who hasn't opted in.
+   `_validate_minutedock_step()` also normalizes the rate to MinuteDock's
+   required `CurrencyString` format (exactly 2 decimals, e.g. `"125.00"`)
+   at validation time, so `review_step.py` never has to reformat it before
+   sending.
+5. **MinuteDock token field + "Test connection" button added to the
+   Settings dialog** (`app/gui/steps/settings_step.py`'s
+   `_open_settings_dialog` - the always-reachable header button, not the
+   first-run-only step) - a masked (`show="*"`) `Entry` plus a button that
+   calls `minutedock_client.test_connection` (`GET /accounts/current`) and
+   shows success/error via `messagebox`, so a bad/mistyped token is caught
+   immediately instead of silently failing at the very end of a Create
+   click. **The header button itself was renamed "File path" → "Settings"**
+   (`main_window.py`) once the dialog it opens covered more than drive
+   paths - caught by the user after running the app for real ("I don't see
+   where to set the API") - "File path" gave no hint an API token lived in
+   there too. Persisted via the same
+   `_save_drive_settings()`/`save_settings()` path as the drive paths (a
+   harmless no-op write on the first-run step, which doesn't render this
+   field at all).
+6. **`review_step.py`'s `_on_create` syncs to MinuteDock last**, after
+   folders and all six Word documents already succeeded, and only if a
+   token is configured - skipped entirely otherwise. The MinuteDock
+   Project's `name` reuses `folder_creator.build_project_folder_name(job_number,
+   street)` verbatim (the exact same `"{job_number} - {street}"` string
+   used for the folder name), so the same identifier ties folders/docs/
+   MinuteDock together. **On `MinuteDockError`, this deliberately mirrors
+   the existing per-document failure handling** (`messagebox.showwarning`
+   with a "Partial success" title, `create_result_var` shows everything
+   that *did* succeed, early `return` without calling
+   `_reset_for_new_project()`) rather than inventing a new retry-button/
+   pending-state mechanism - re-clicking Create for the same job already
+   can't fully retry cleanly today (folder creation raises `FileExistsError`
+   once folders exist), a known pre-existing limitation this feature
+   doesn't attempt to solve, so a bespoke MinuteDock-only retry affordance
+   would have been inconsistent with - and more complex than - what
+   Word-doc failures already do. `_reset_for_new_project()` also resets the
+   three MinuteDock vars back to their defaults (billable=True, rate
+   mode="contact", rate="").
+7. **`app/config/settings.py`**: added `minutedock_access_token` (default
+   `""`); removed the long-dead `website_url` key (nothing read it, and
+   MinuteDock's API has a fixed base URL - there's no "website URL" concept
+   to configure). Old saved JSON with a stray `website_url` key is
+   harmlessly ignored by `load_settings()`'s merge-over-defaults, no
+   migration needed.
+8. **`requirements.txt`**: uncommented `requests>=2.31.0` (already
+   installed in the dev environment, confirmed via `python -c "import
+   requests"` before relying on it) and dropped the `selenium` line
+   entirely - browser automation was the alternative the user's decision
+   ruled out, not a "maybe later" option worth leaving commented.
+9. **Two bugs found by the user actually running the app**, both fixed:
+   the header's "File path" button was renamed **"Settings"** (it opens a
+   dialog that now covers more than drive paths, but nothing hinted the
+   MinuteDock token lived in there too - see "What Didn't Work" for the
+   full "我没有看到setting api的地方" story); and a **recurrence of the
+   stale-`self.steps` bug** from an earlier handoff - saving a MinuteDock
+   token via the Settings dialog persisted it correctly but didn't rebuild
+   the step list the user was already looking at, so the new "MinuteDock"
+   step didn't appear until a restart. Fixed with
+   `_refresh_step_list_preserving_position()` (`settings_step.py`) - see
+   "What Didn't Work" for why this is a second instance of a *documented*
+   mistake, not a new one.
+10. **Packaging** (PyInstaller onedir + Inno Setup) - the app is now a real
+    installable `Setup.exe`, not just something run via `python main.py`.
+    See "Packaging" below for the full writeup.
+11. **PS1 Input's Council name row nudged right** (`ps1_step.py`) - the
+    dropdown + "Add Council..."/"Edit Council..." buttons had a lot of
+    empty space to their right (the row is only as wide as its own
+    content, sitting left-aligned in a much wider input column shared with
+    the full-width Description/Legal description/Site verification `Text`
+    boxes below it). First tried `sticky="e"` (snap the whole row to the
+    right edge of its grid cell) but that's an edge-anchor, not a nudge -
+    the user wanted a small rightward shift, not full-right alignment, so
+    it's `sticky="w"` (unchanged) plus `padx=8` on the row's own `grid()`
+    call instead - the same fixed-offset idiom already used for the
+    Description/Legal description/Site verification rows just below it.
+    (A `padx=(0, 16)` → `padx=(0, 20)` tweak on the Scope-of-statement
+    radio buttons' own spacing, a few lines down, rode along in the same
+    diff - minor, unrelated spacing polish, not a functional change.)
+
+`f538915`'s own changes (historical record, already pushed):
 
 1. **The Inspection Schedule step's "Other" item is no longer limited to
    one - the user can Add/Remove any number of them.** Previously a
@@ -206,8 +363,15 @@ temp-dir tests, plus the user opening generated `.docx` output in Word).
 Everything added since (Waivers, Specification, Calculation Statement,
 the module split, B2 Letter) was verified via headless scripts that
 drive the real `MainWindow`/`word_filler` code and inspect the resulting
-`.docx` with python-docx - see "What Worked". Step 3 is an untouched
-stub.
+`.docx` with python-docx - see "What Worked". **Step 3 is now implemented**
+against MinuteDock's REST API (find-or-create Contact/Project, synced on
+the same Create click) - see "Feature 3: MinuteDock sync" below. The
+failure path (bad/missing token) was verified end-to-end against the real
+MinuteDock API this handoff; the success path (an actual Contact/Project
+getting created/matched) has only been read-verified in code, not run
+against a real account, since no real MinuteDock token was available while
+building this - **still needs the user to run it once for real with their
+own token** before considering it fully done.
 
 ### Project structure
 
@@ -225,26 +389,34 @@ app/
 │       ├── waivers_step.py
 │       ├── specification_step.py
 │       ├── b2_letter_step.py
+│       ├── minutedock_step.py
 │       └── review_step.py
 ├── core/
-│   ├── folder_creator.py # Step 1 — IMPLEMENTED
-│   ├── word_filler.py    # Step 2 — IMPLEMENTED
-│   └── web_filler.py     # Step 3 — stub, raises NotImplementedError
+│   ├── folder_creator.py    # Step 1 — IMPLEMENTED
+│   ├── word_filler.py       # Step 2 — IMPLEMENTED
+│   ├── web_filler.py        # Step 3 — IMPLEMENTED (business logic: what to sync, in what order)
+│   └── minutedock_client.py # Step 3 — thin MinuteDock REST API wrapper (no business logic)
 ├── config/settings.py    # settings persisted to %APPDATA%\AutomaticProcess\user_settings.json
 └── utils/logger.py       # logs to console + %APPDATA%\AutomaticProcess\logs\app.log
 
-resources/templates/       # six working templates, no untouched-"original" copies anymore
-├── Project register.docx
-├── PS1 Producer Statement.docx
-├── LBP form.docx             # checkboxes/cells migrated in place (see Word filling)
-├── Calculation Statement.docx  # no tokens/tables - copied through as-is
-├── Specifications.docx       # section-selectable (see Word filling)
-└── B2 Letter.docx            # table-row-selectable (see Word filling)
+resources/
+├── automation.png    # source image for app_icon.ico (a personal photo, confirmed intentional - see "What Worked")
+├── app_icon.ico       # generated from automation.png - see "Packaging"
+└── templates/        # six working templates, no untouched-"original" copies anymore
+    ├── Project register.docx
+    ├── PS1 Producer Statement.docx
+    ├── LBP form.docx             # checkboxes/cells migrated in place (see Word filling)
+    ├── Calculation Statement.docx  # no tokens/tables - copied through as-is
+    ├── Specifications.docx       # section-selectable (see Word filling)
+    └── B2 Letter.docx            # table-row-selectable (see Word filling)
 
-build_scripts/   # empty aside from a README placeholder
+build_scripts/   # PyInstaller spec + Inno Setup script - see "Packaging"
+├── automaticprocess.spec  # PyInstaller: onedir, windowed, bundles templates/icon
+├── installer.iss          # Inno Setup: wraps the onedir build into Setup.exe
+└── output/                # gitignored - AutomaticProcess-Setup.exe lands here
 tests/           # empty — no automated tests, everything verified via ad hoc scripts
 main.py          # root entry script: `python main.py`
-requirements.txt # python-docx, pyinstaller; selenium/requests commented out for Step 3
+requirements.txt # python-docx, pyinstaller, requests (MinuteDock API)
 ```
 
 ### GUI module layout ([app/gui/](app/gui/))
@@ -379,21 +551,34 @@ layout" above:
    *content* is fixed (the user said so explicitly - "内容不用变"); this
    step only toggles which rows appear. See "Word filling" for the
    removal mechanism.
-8. **Review & Create** — the Next button becomes "Create" on the last
+8. **MinuteDock** (this handoff) — only appears in `self.steps` when a
+   MinuteDock Personal Access Token is configured in Settings
+   (`_build_step_list()`'s conditional append, same precedent as the
+   first-run-only Settings step); invisible/skippable otherwise. A
+   "Project is billable" checkbutton plus a "Use contact rates"/"Set a
+   standard rate for this project" radio gating a `$/hour` entry (same
+   gating idiom as Waivers/Specification). Mirrors MinuteDock's own "New
+   Project" web page, which the user screenshotted while requesting this
+   feature. See "Feature 3: MinuteDock sync" below for what this data
+   actually drives.
+9. **Review & Create** — the Next button becomes "Create" on the last
    step. Runs `folder_creator.create_project_folders`, then
    `word_filler.fill_docx_template` for each of the **six** templates
    (Project register, PS1, LBP form, Calculation Statement,
    Specifications, B2 Letter — skipped individually if its template file
-   is missing), then shows a success dialog (see "Success dialog"
+   is missing), then (this handoff) `web_filler.sync_to_minutedock` if a
+   token is configured (see "Feature 3: MinuteDock sync"), then shows a
+   success dialog (see "Success dialog"
    below), then calls `_reset_for_new_project()` which blanks every
    *project* field (job number, street/suburb/town, scope, PS1 fields,
    inspection schedule selections/order, waivers fields,
-   Specification/B2 Letter selections, date, etc.),
-   **rebuilds `self.steps`** (this handoff - see the Repo note above;
-   picks up Settings dropping out of the list if it was just completed
-   this session), and jumps back to the General step — but leaves drive
-   settings and the saved council list alone, since those are machine
-   config, not project data.
+   Specification/B2 Letter/MinuteDock selections, date, etc.),
+   **rebuilds `self.steps`** (an earlier handoff - see the Repo note
+   above; picks up Settings dropping out of the list if it was just
+   completed this session, and MinuteDock dropping in/out if the token was
+   just configured/cleared), and jumps back to the General step — but
+   leaves drive settings, the saved council list, and the MinuteDock token
+   alone, since those are machine config, not project data.
 
 ### Success dialog ([app/gui/steps/review_step.py](app/gui/steps/review_step.py))
 
@@ -797,6 +982,171 @@ Consent Document`, Project register.docx at the Engineer project root;
 two-phase validate-then-create so a name collision never leaves a
 partial mess.
 
+### Feature 3: MinuteDock sync ([app/core/minutedock_client.py](app/core/minutedock_client.py), [app/core/web_filler.py](app/core/web_filler.py))
+
+Two layers, same split as Step 2's `word_filler.py`/`review_step.py`:
+`minutedock_client.py` is a thin, dependency-free wrapper around
+`https://minutedock.com/api/v1` with **no business logic** (auth header,
+JSON in/out, error handling only); `web_filler.py`'s `sync_to_minutedock()`
+is the business logic on top of it (what to find-or-create, in what
+order). Authenticates with a **Personal Access Token** the user generates
+once from their own MinuteDock profile ("Manage Access Tokens") and pastes
+into the Settings dialog - sent as `Authorization: Bearer <token>` on
+every request. `_on_create` in `review_step.py` only attempts this *after*
+folders and all six Word documents already succeeded, and only if a token
+is configured in `self.settings` - entirely skipped otherwise (no token
+field left empty means Step 3 just silently doesn't run, same "skip if not
+configured/present" idea as a missing template file in the documents
+loop).
+
+**Find-or-create, not create-only**, for both the Contact and the
+Project - `find_or_create_contact`/`find_or_create_project` each do a
+`GET` first (matching `name` exact, case-insensitive, trimmed - not
+substring, since e.g. "Smith" fuzzy-matching "Smith Family Trust" would
+silently attach a job to the wrong client) and only `POST` on a miss. This
+matters because `_on_create` can plausibly run twice for the same job (the
+existing "Partial success" pattern for a Word-doc-fill failure leaves the
+wizard state as-is rather than resetting, so a user could very reasonably
+click Create again) - without find-or-create, a retry would create
+duplicate MinuteDock records every time.
+
+**Contact name** comes straight from the General step's `client_info_var`
+(free text, already existed - no new field needed). **Project name**
+reuses `folder_creator.build_project_folder_name(job_number, street)`
+verbatim - the exact same string used for the actual folder name - so the
+same identifier ties folders, Word docs, and the MinuteDock project
+together and can always be found again from job_number+street alone.
+**Billable/rate** come from the new MinuteDock wizard step (see "GUI:
+wizard steps" above); `default_rate_dollars` is only sent when the user
+picked "Set a standard rate" - never sent when they picked "Use contact
+rates", so MinuteDock's own contact-level default isn't overridden by
+accident.
+
+**No pagination** for `GET /contacts`/`GET /projects` in this version - a
+single small engineering firm's account is assumed to fit in the API's
+default page size (500). Documented as a known limitation in
+`minutedock_client.py`'s module docstring rather than guessed at; would
+need a real pagination loop added to a future `_get_all`-style helper if a
+firm's contact/project list ever grows past that.
+
+**No "Reference" field** - MinuteDock's own "New Project" web UI (which
+the user screenshotted) has a "Reference" text box, but the `Project`
+schema has no equivalent (that's an Invoice-level field instead in the
+OpenAPI spec) - there's nothing to send it to, so it's intentionally
+omitted, with a comment in `minutedock_client.py` explaining why, so a
+future reader doesn't go looking for where it "should" be wired up.
+
+**No budget support** - the screenshot's "Set a budget" section (type/
+frequency/target) is deliberately not implemented. Asked explicitly after
+the first version shipped ("the UI doesn't have a place for me to fill in
+budget") and confirmed with the user via `AskUserQuestion` that it's not
+wanted for now - not an oversight, a confirmed scope decision. If it's
+ever wanted, `Project`'s schema already has `budget_type`/
+`budget_frequency`/`budget_target` (see `_BudgetProperties` in the OpenAPI
+spec) ready to wire into `find_or_create_project`.
+
+**On failure** (`MinuteDockError` - network issue, bad token, 4xx/5xx),
+`_on_create` shows the exact same "Partial success" `messagebox.showwarning`
++ early-`return`-without-reset pattern already used for a Word-doc-fill
+failure, rather than a bespoke MinuteDock-specific retry mechanism. This
+was a deliberate simplicity choice: re-clicking Create for the same job
+already can't cleanly retry today regardless of *which* step failed
+(`folder_creator.create_project_folders` raises `FileExistsError` once
+folders exist), so a special retry-button/pending-state system just for
+MinuteDock would have been inconsistent with - and more complex than -
+what every other failure in this same method already does. If proper
+retry-without-recreating-folders is ever wanted, it's a single
+cross-cutting improvement that would help every step in `_on_create`, not
+a MinuteDock-only fix.
+
+**A real discrepancy between the OpenAPI spec and the live API was caught
+by actually calling it, not by re-reading the spec harder**: the spec
+documents the error response shape as `{"error": "...", "status": ...}`,
+but a real 403 response (from `test_connection` with a deliberately bogus
+token - a safe, read-only smoke test) actually came back as `{"status":
+"error", "message": "..."}` instead. `_request`'s error-message extraction
+checks both `error` and `message` keys for exactly this reason - trusting
+the spec alone would have produced a raw-JSON-text error message instead
+of the human-readable one. See "What Worked" for why this generalizes into
+a standing lesson about API integrations.
+
+### Packaging ([build_scripts/](build_scripts/))
+
+Two tools, two build steps, documented in full in
+[build_scripts/README.md](build_scripts/README.md) (build commands,
+one-time setup) - this section covers the *why* behind the choices.
+
+**PyInstaller (`automaticprocess.spec`) → Inno Setup (`installer.iss`).**
+PyInstaller alone only produces an exe or a folder, never a real
+installer (Start Menu shortcut, "Apps & features" uninstall entry) - Inno
+Setup wraps whatever PyInstaller produces into a proper `Setup.exe`. The
+user explicitly asked whether a `.msi` was possible; the honest answer is
+PyInstaller can't produce one directly either way, and the real choice is
+between WiX (produces a literal `.msi`, more config) and Inno Setup
+(produces a `Setup.exe` that behaves identically for the end user -
+wizard, shortcuts, uninstall entry). The user confirmed they don't need a
+literal `.msi` specifically, just the installer *experience* - Inno Setup
+chosen for that reason, discussed and confirmed via `AskUserQuestion`
+before any build config was written.
+
+**Onedir, not onefile, once Inno Setup is doing the "one file to
+distribute" job.** PyInstaller's onefile mode exists specifically so you
+can hand someone a single exe - but once that exe is going to be
+permanently installed to `Program Files` by a real installer anyway,
+onefile's self-extract-to-a-temp-folder-on-every-launch behavior only
+costs startup time and antivirus-false-positive risk, with no upside left
+to offset it. Onedir starts faster and is easier to debug (an actual
+folder of files, not a runtime-extracted temp directory). This trade-off
+was explained to the user (see chat) before picking onedir, not assumed.
+
+**`app/gui/constants.py`'s `TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent
+/ "resources" / "templates"` needed zero code changes to keep working
+frozen** - confirmed empirically, not just reasoned about, since PyInstaller
+patches `__file__` for frozen modules to a synthetic-but-consistent path
+under `sys._MEIPASS` specifically so this common pattern keeps working.
+Verified with a small standalone diagnostic script/build (imported
+`app.gui.constants`, printed `TEMPLATES_DIR`/`.exists()`/directory
+listing, built as its own tiny onedir exe with the same `--add-data`
+mapping, ran it, read the output, then deleted the whole throwaway
+build) - see "What Worked" for why this was worth doing instead of
+trusting the reasoning alone.
+
+**`app/utils/logger.py` needed one real code change**:
+`StreamHandler(sys.stdout)` would raise the moment anything got logged in
+a windowed (`console=False`) build, since `sys.stdout` is `None` (not
+just closed/redirected) when there's no console attached - now guarded
+with `if sys.stdout is not None:`. Found by reasoning about the
+`--windowed` flag's known implications *before* building (not by hitting
+the crash first) - the file-handler logging (`%APPDATA%\AutomaticProcess\logs\app.log`)
+was always going to be the real log destination for a windowed build
+anyway, so the console handler is now simply skipped rather than
+attempted-and-crashing when there's nothing to write to.
+
+**`resources/app_icon.ico`** was generated from a user-supplied PNG
+(`resources/automation.png`) via Pillow: padded to a square canvas (the
+source was 125×130, not square), then **upscaled to 256×256 before
+saving** - Pillow's ICO writer only emits requested sizes that are `<=`
+the source image's own size, so skipping the upscale silently dropped the
+256×256 frame Windows uses for large-icon views, leaving 128×128 as the
+largest available size. Caught by inspecting the saved `.ico`'s own
+`.info["sizes"]` after the first attempt, not assumed correct - see "What
+Worked" for the "the source photo is a personal photo of two people, not
+a logo" confirmation that came before any of this.
+
+**Testing the packaged build for real, not just trusting the build logs said "Successful compile."**
+The exe was actually launched (via a screenshot, confirming the window
+opens, no console flashes behind it, and the file log shows
+`Application starting` with no crash) and the installer was actually run
+end-to-end - install (non-elevated throwaway variant, to avoid needing an
+interactive UAC approval this session couldn't provide), confirm the exe
+launches from the installed location, then uninstall and verify zero
+leftover files/shortcuts/registry keys. The *real* `installer.iss`
+(admin-required, installs to `Program Files`, as a normal Windows
+installer should) was deliberately **not** run by this session - UAC
+elevation exists specifically to require a human, so the final real-world
+verification of `AutomaticProcess-Setup.exe` is left for the user to run
+themselves (see "Next Steps").
+
 ## What Worked
 
 - **tkinter**, confirmed again — the wizard now has real forms, live
@@ -977,6 +1327,76 @@ partial mess.
   every field populated after adding the run-splitting fallback and
   confirmed zero new "does not align"/other warnings anywhere, not just
   that the B2 Letter paragraph in question now reads correctly.
+- **Using plan mode for a genuinely multi-file, multi-decision feature
+  (MinuteDock sync) instead of just starting to code.** Three real design
+  questions (auth method, when to trigger the sync, how to resolve a
+  Contact) were resolved with the user via `AskUserQuestion` *before* the
+  plan was even drafted, then a full file-by-file plan was written and
+  approved via `ExitPlanMode` before any file was touched. Caught scope
+  creep before it happened, not after: the plan's own first draft (from a
+  delegated Plan agent) proposed a bespoke retry-button/pending-state
+  mechanism for MinuteDock failures, which got simplified back down to
+  mirroring the *existing* Word-doc-failure pattern once it was clear the
+  same "can't retry without recreating folders" limitation already existed
+  and wasn't being solved for Word docs either - catching that during
+  planning was far cheaper than catching it after writing a whole
+  parallel retry system.
+- **Testing an API integration against the real, live endpoint - even
+  before writing any GUI code - caught a real spec-vs-reality mismatch
+  that no amount of re-reading the OpenAPI spec would have.** A one-line,
+  safe, read-only smoke test (`test_connection` with a deliberately bogus
+  token) revealed the actual 403 error body used `{"status": "error",
+  "message": ...}`, not the spec-documented `{"error": "...", "status":
+  ...}`. Fixed by checking both keys in `_request`'s error extraction.
+  **When integrating a third-party API, exercise at least one real call
+  (a safe, side-effect-free one like a bad-auth check) as part of building
+  the client, don't just trust the spec document.**
+- **Find-or-create (not create-only) for both records synced to
+  MinuteDock, decided during planning rather than added reactively after
+  a duplicate-creation bug report.** The project's own existing "Partial
+  success" pattern (leaves wizard state as-is on failure, doesn't force a
+  reset) already made a same-job re-Create a realistic scenario before this
+  feature existed - recognizing that during planning (not after someone
+  hit it) meant find-or-create was designed in from the start instead of
+  patched on later.
+- **Actually opening the icon source file before packaging it, instead of
+  assuming a file named `automation.png` was a logo.** It turned out to be
+  a personal photo of two people - rendered a preview and asked the user
+  to confirm before it got baked into `resources/app_icon.ico` and shipped
+  in every build. They confirmed it was intentional, but the check itself
+  cost nothing and would have caught a real mistake (wrong file path, a
+  private photo accidentally in the wrong folder) if the answer had been
+  different.
+- **Verifying a "should just work because of how PyInstaller handles
+  `__file__`" claim with an actual frozen build, before trusting it for
+  the real app.** Built a tiny throwaway diagnostic script into its own
+  onedir exe (same `--add-data` mapping as the real spec), ran it, read
+  back `TEMPLATES_DIR`/`.exists()`/the actual file listing, *then* deleted
+  the whole throwaway build once confirmed - cheaper and more conclusive
+  than either assuming the reasoning was right or debugging a "why can't
+  the packaged app find its templates" report after the fact.
+- **Recognizing when an OS security prompt (UAC) is the actual point,
+  not an obstacle to script around.** The real `installer.iss` requires
+  admin rights by design (a normal Windows installer experience) - rather
+  than trying to suppress/bypass that to get a fully-automated test, a
+  throwaway `PrivilegesRequired=lowest` variant was built just to verify
+  the Inno Setup *script's own logic* (Files/Icons/uninstall sections)
+  non-interactively, and the real admin-required installer was explicitly
+  left for the user to run themselves (see "Next Steps") - the two have
+  different jobs: one verifies the script doesn't have a bug, the other is
+  the actual real-world acceptance test only a human can give.
+- **Even a real, admin-free non-interactive install/uninstall cycle is
+  worth actually running, not just skimming the Inno Setup docs.** The
+  first attempt at running the test installer via the Bash tool's `&`-style
+  background launch returned immediately with no log file - Inno Setup
+  installers can re-launch themselves as a child process, so the shell's
+  "it exited" wasn't the same as "the install finished." Switched to
+  PowerShell's `Start-Process -Wait` (blocks until the *actual* install
+  process, not just the launcher, completes) and got a real log
+  confirming success. Then ran the generated uninstaller and checked
+  `Test-Path` on every artifact (install dir, Start Menu shortcut, Desktop
+  shortcut, registry uninstall key) - all four, not just the obvious one -
+  before considering the round-trip verified.
 
 ## What Didn't Work / Avoid Repeating
 
@@ -1049,6 +1469,36 @@ partial mess.
   - or at minimum, explicitly re-derived at the one point (here, the
   post-Create reset) where the app returns to a "clean slate" a user
   would expect to match a fresh launch.
+- **The exact same class of bug recurred for the MinuteDock step's
+  conditional inclusion, in a new spot the earlier fix didn't cover.**
+  `_open_settings_dialog`'s `on_save()` persisted a newly-entered
+  MinuteDock token correctly, but never rebuilt `self.steps` - so the
+  "MinuteDock" step didn't appear until the app was restarted, even though
+  `_build_step_list()`'s conditional (`if
+  self.settings.get("minutedock_access_token", "").strip():`) was
+  correctly written and the earlier `_reset_for_new_project()` fix for
+  this exact issue already existed in the codebase as a *known pattern to
+  apply*. Caught immediately by the user actually running the app
+  ("我没有看到这一步" after saving a token, on a real "Step 7 of 7" Review
+  & Create screenshot with no MinuteDock step in sight) - a second
+  reminder that this specific mistake (state derived from settings,
+  computed once, not re-derived when settings change mid-session) is easy
+  to reintroduce even with the earlier instance documented right here in
+  this file. Fixed with a new `_refresh_step_list_preserving_position()`
+  (`settings_step.py`), called from `on_save()`: unlike
+  `_reset_for_new_project()` (which always lands back on a fixed step,
+  "General"), the Settings dialog can be opened from *any* step, so this
+  rebuilds `self.steps` and then finds the *same step by title* in the
+  rebuilt list (falling back to clamping the index if that title
+  vanished) rather than assuming a fixed destination or a stable index -
+  confirmed by a headless test that opens the dialog equivalent while
+  sitting on "Review & Create" with no token, saves one, and checks both
+  that "MinuteDock" now appears in `self.steps` *and* that the user is
+  still looking at "Review & Create" (now correctly numbered), not
+  silently bounced elsewhere. **Any future step made conditional on a
+  Settings value needs to double-check every place that value can be
+  changed - not just the one call site an earlier bug happened to get
+  fixed at - triggers a rebuild.**
 - **Templates open in Word block migration scripts from saving
   (`PermissionError: [Errno 13]`)** - the user had PS1 Producer
   Statement.docx open while looking at it for a screenshot, and the
@@ -1173,20 +1623,48 @@ partial mess.
    `ttk.Combobox` - confirmed programmatically that it builds/enables/
    disables correctly, never actually opened and picked from in a running
    window) and the B2 Letter street/suburb/town fix (confirmed via the
-   generated `.docx`, not by looking at the document in Word itself).
+   generated `.docx`, not by looking at the document in Word itself). **Also
+   unclicked:** the new MinuteDock step's checkbox/radio/rate-entry UI -
+   only verified programmatically (see below).
 2. **Consent Document folder** (`06 Consent Document`) now gets PS1, LBP
    form, Calculation Statement, Specifications, and B2 Letter - probably
    everything the user meant by "other documents belong there too" when
    that was mentioned in passing early on, but worth a quick
    confirmation now that the folder is this full rather than assuming.
-3. **Step 3 (website submission)** — completely unstarted, no URL, no
-   auth method, no field mapping gathered yet. `web_filler.py` is an
-   untouched stub.
-4. **Packaging (PyInstaller)** — still deferred per the user's original
-   preference (get functionality working first). Worth floating again
-   now that Step 2 covers all six known documents - in case the user
-   wants an early build to test on their own machine before Step 3 is
-   done.
+3. **Step 3 (MinuteDock sync) needs a real end-to-end run with the user's
+   own MinuteDock Personal Access Token.** No token was available while
+   building this, so testing so far covers: the failure path against the
+   real live API (a deliberately bad token, confirmed the exact error
+   surfaces correctly and folders/docs already created are left intact -
+   see "Feature 3: MinuteDock sync"), and the GUI wiring (step
+   appears/disappears based on whether a token is configured, validation,
+   rate normalization) via headless `MainWindow` scripts. **Not yet
+   verified**: that `find_or_create_contact`/`find_or_create_project`
+   actually create/match real records correctly against a live account,
+   that the "Test connection" button in Settings works end-to-end, or that
+   a second Create for the same job truly finds the existing
+   Contact/Project instead of duplicating it. Get the user's token in
+   (Settings → MinuteDock token → Test connection), run a real Create, and
+   check the result in the MinuteDock web UI.
+4. **Packaging is implemented but the real installer needs the user's own
+   run.** `build_scripts/output/AutomaticProcess-Setup.exe` exists and its
+   Inno Setup mechanics were verified via a throwaway non-admin variant
+   (install → launch → uninstall → confirm zero leftovers - see
+   "Packaging"), but the *real* installer requires admin/UAC, which this
+   session couldn't approve non-interactively. **The user needs to
+   actually run `AutomaticProcess-Setup.exe` once**, approve UAC, confirm
+   it installs to `Program Files`, launches, has a working Start Menu/
+   optional desktop shortcut, and uninstalls cleanly via "Apps &
+   features." Also worth deciding: **code signing** - an unsigned exe/
+   installer will very likely trigger a Windows SmartScreen "unrecognized
+   publisher" warning on first run on someone else's machine (not tested
+   here, since this was run locally where the file was just built, which
+   Windows treats differently than a freshly-downloaded/copied file from
+   another machine) - acceptable for now for an internal single-firm tool,
+   but worth flagging before wider distribution. **Version bumps**:
+   `MyAppVersion` in `installer.iss` is hardcoded `"1.0.0"` - bump it by
+   hand for each new release for now; nothing currently ties it to a git
+   tag or `constants.py`.
 5. No automated tests exist (`tests/` is empty aside from `__init__.py`).
    Everything so far was verified via ad hoc scripts run through the Bash
    tool, not committed as reusable tests. `word_filler.py` in particular

@@ -1,5 +1,5 @@
 """Persistent app configuration (saved base folder, Word template path,
-website URL, etc.).
+MinuteDock access token, etc.).
 
 Settings are stored as JSON in the user's local app-data directory, kept
 out of source control, so each machine has its own configuration.
@@ -23,7 +23,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "drafting_drive": "",
     "admin_drive": "",
     "word_template": "",     # Step 2: Word template file path
-    "website_url": "",       # Step 3: timesheet/info website URL
+    "minutedock_access_token": "",  # Step 3: MinuteDock Personal Access Token (optional - Step 3 is skipped without it)
     "council_names": [],     # user-maintained list, e.g. for the PS1 Input step
 }
 

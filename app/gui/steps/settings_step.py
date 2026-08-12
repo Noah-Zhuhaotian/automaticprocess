@@ -1,8 +1,10 @@
-"""Step: Settings - drive paths (Engineer/Drafting/Admin).
+"""Step: Settings - drive paths (Engineer/Drafting/Admin) plus the
+MinuteDock Personal Access Token.
 
-Only shown in the step list on first run, i.e. when any of the three
-paths is still unconfigured; always reachable afterwards via the header's
-"File path" button (_open_settings_dialog).
+The first-run step (_build_settings_step) only covers drive paths and is
+only shown in the step list when any of the three paths is still
+unconfigured; the dialog (_open_settings_dialog, always reachable via the
+header's "Settings" button) covers both drives and the MinuteDock token.
 """
 
 from __future__ import annotations
@@ -11,6 +13,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from app.config.settings import save_settings
+from app.core import minutedock_client
+from app.core.minutedock_client import MinuteDockError
 from app.gui.constants import DRIVE_KEYS
 
 
@@ -19,13 +23,14 @@ class SettingsStepMixin:
         self.engineer_drive_var = tk.StringVar(value=self.settings.get("engineer_drive", ""))
         self.drafting_drive_var = tk.StringVar(value=self.settings.get("drafting_drive", ""))
         self.admin_drive_var = tk.StringVar(value=self.settings.get("admin_drive", ""))
+        self.minutedock_token_var = tk.StringVar(value=self.settings.get("minutedock_access_token", ""))
 
     def _drives_configured(self) -> bool:
         return all(self.settings.get(key, "").strip() for key in DRIVE_KEYS)
 
     def _open_settings_dialog(self) -> None:
         dialog = tk.Toplevel(self)
-        dialog.title("Drive Settings")
+        dialog.title("Settings")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -49,14 +54,72 @@ class SettingsStepMixin:
                 row=row, column=2, pady=4, padx=(0, 12)
             )
 
+        token_row = len(drive_rows) + 1
+        ttk.Separator(dialog, orient="horizontal").grid(
+            row=token_row, column=0, columnspan=3, sticky="ew", padx=12, pady=(8, 8)
+        )
+        ttk.Label(
+            dialog,
+            text=(
+                "MinuteDock Personal Access Token (optional). Generate one from your "
+                "MinuteDock profile → Manage Access Tokens. Leave blank to skip "
+                "MinuteDock sync entirely."
+            ),
+            wraplength=420,
+            justify="left",
+        ).grid(row=token_row + 1, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 6))
+        ttk.Label(dialog, text="MinuteDock token:").grid(
+            row=token_row + 2, column=0, sticky="w", padx=12, pady=4
+        )
+        ttk.Entry(dialog, textvariable=self.minutedock_token_var, width=40, show="*").grid(
+            row=token_row + 2, column=1, pady=4, padx=8
+        )
+        ttk.Button(dialog, text="Test connection", command=self._test_minutedock_connection).grid(
+            row=token_row + 2, column=2, pady=4, padx=(0, 12)
+        )
+
         def on_save() -> None:
             if self._save_drive_settings():
                 dialog.destroy()
                 self._update_availability_status()
+                self._refresh_step_list_preserving_position()
 
         ttk.Button(dialog, text="Save", command=on_save).grid(
-            row=len(drive_rows) + 1, column=2, sticky="e", padx=12, pady=12
+            row=token_row + 3, column=2, sticky="e", padx=12, pady=12
         )
+
+    def _refresh_step_list_preserving_position(self) -> None:
+        """Rebuild self.steps after Settings changes something that affects
+        _build_step_list() (currently: the MinuteDock token appearing/
+        disappearing) - self.steps is otherwise only ever rebuilt in
+        _reset_for_new_project(), which runs after a full successful Create,
+        not right after Settings is saved. Without this, a token saved
+        mid-session wouldn't add the MinuteDock step until the app was
+        restarted, since the dialog can be opened from any step (not just a
+        first-run flow that always lands back on General), stay on the same
+        *named* step across the rebuild rather than assuming an index.
+        """
+        current_title = self.steps[self.current_step]["title"]
+        self.steps = self._build_step_list()
+        for index, step in enumerate(self.steps):
+            if step["title"] == current_title:
+                self.current_step = index
+                break
+        else:
+            self.current_step = min(self.current_step, len(self.steps) - 1)
+        self._show_step(self.current_step)
+
+    def _test_minutedock_connection(self) -> None:
+        token = self.minutedock_token_var.get().strip()
+        if not token:
+            messagebox.showerror("Missing token", "Enter a MinuteDock token first.")
+            return
+        try:
+            account_name = minutedock_client.test_connection(token)
+        except MinuteDockError as exc:
+            messagebox.showerror("Connection failed", str(exc))
+            return
+        messagebox.showinfo("Connection successful", f"Connected to MinuteDock account: {account_name}")
 
     # ---------- Step: Settings ----------
     def _build_settings_step(self, parent: ttk.Frame) -> None:
@@ -99,6 +162,7 @@ class SettingsStepMixin:
         self.settings["engineer_drive"] = engineer
         self.settings["drafting_drive"] = drafting
         self.settings["admin_drive"] = admin
+        self.settings["minutedock_access_token"] = self.minutedock_token_var.get().strip()
         save_settings(self.settings)
         return True
 

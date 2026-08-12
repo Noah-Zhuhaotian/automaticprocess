@@ -1,7 +1,9 @@
 """Step: Review & Create - single Create button that builds the shared
 replacements dict and generates everything for the current project:
 project folders plus the Project register, PS1, LBP form, Calculation
-Statement, Specifications, and B2 Letter documents.
+Statement, Specifications, and B2 Letter documents, then (if a MinuteDock
+Personal Access Token is configured in Settings) syncs the matching
+Contact/Project to MinuteDock.
 """
 
 from __future__ import annotations
@@ -10,7 +12,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-from app.core import folder_creator, word_filler
+from app.core import folder_creator, web_filler, word_filler
+from app.core.minutedock_client import MinuteDockError
 from app.gui.constants import (
     B1_OPTIONS,
     B2_LETTER_MATERIALS,
@@ -307,6 +310,35 @@ class ReviewStepMixin:
                 )
                 return
 
+        token = self.settings.get("minutedock_access_token", "").strip()
+        if token:
+            project_name = folder_creator.build_project_folder_name(
+                replacements["job_number"], replacements["street"]
+            )
+            try:
+                result = web_filler.sync_to_minutedock(
+                    token,
+                    client_name=replacements["client_info"],
+                    project_name=project_name,
+                    billable=self.minutedock_billable_var.get(),
+                    standard_rate_dollars=(
+                        self.minutedock_standard_rate_var.get().strip()
+                        if self.minutedock_rate_mode_var.get() == "standard"
+                        else None
+                    ),
+                )
+                summary += (
+                    f"\nMinuteDock: contact '{result['contact']['name']}', "
+                    f"project '{result['project']['name']}'"
+                )
+            except MinuteDockError as exc:
+                logger.exception("Failed to sync to MinuteDock")
+                self.create_result_var.set(f"Created:\n{summary}")
+                messagebox.showwarning(
+                    "Partial success", f"Folders and documents were created, but MinuteDock sync failed:\n{exc}"
+                )
+                return
+
         self.create_result_var.set(f"Created:\n{summary}")
         self._update_availability_status()
         self._show_success_dialog("Done", "Project created successfully.")
@@ -402,6 +434,10 @@ class ReviewStepMixin:
 
         for material in B2_LETTER_MATERIALS:
             self.b2_letter_material_vars[material].set(False)
+
+        self.minutedock_billable_var.set(True)
+        self.minutedock_rate_mode_var.set("contact")
+        self.minutedock_standard_rate_var.set("")
 
         # Rebuild the step list: if this was the first run, Settings just
         # got filled in and saved during this very session, but self.steps
