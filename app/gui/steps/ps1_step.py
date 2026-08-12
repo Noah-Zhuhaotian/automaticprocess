@@ -115,7 +115,7 @@ class Ps1StepMixin:
 
         ttk.Label(frame, text="Scope of statement:", width=LABEL_WIDTH).grid(row=row, column=0, sticky="w", pady=(12, 4))
         all_part_frame = ttk.Frame(frame)
-        all_part_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=(12, 4))
+        all_part_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=(12, 4), padx=8)
         for col, option in enumerate(ALL_PART_OPTIONS):
             ttk.Radiobutton(all_part_frame, text=option, variable=self.all_part_var, value=option).grid(
                 row=0, column=col, sticky="w", padx=(0, 20)
@@ -126,7 +126,7 @@ class Ps1StepMixin:
             row=row, column=0, sticky="nw", pady=4
         )
         cm_frame = ttk.Frame(frame)
-        cm_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=4)
+        cm_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=4, padx=8)
         for col, item in enumerate(CM_ITEMS):
             ttk.Checkbutton(cm_frame, text=item, variable=self.cm_vars[item]).grid(
                 row=0, column=col, sticky="w", padx=(0, 12)
@@ -135,7 +135,7 @@ class Ps1StepMixin:
 
         ttk.Label(frame, text="Basis of statement:", width=LABEL_WIDTH).grid(row=row, column=0, sticky="w", pady=(12, 4))
         compliance_frame = ttk.Frame(frame)
-        compliance_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=(12, 4))
+        compliance_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=(12, 4), padx=8)
         # Independent checkboxes, not mutually-exclusive radios - a PS1 can
         # rely on both Compliance and Alternative solution at once.
         ttk.Checkbutton(
@@ -150,7 +150,7 @@ class Ps1StepMixin:
             row=row, column=0, sticky="nw", pady=4
         )
         b1_frame = ttk.Frame(frame)
-        b1_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=4)
+        b1_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=4, padx=8)
         self._b1_checkbuttons = {}
         b1_state = "normal" if self.compliance_var.get() else "disabled"
         for col, option in enumerate(B1_OPTIONS):
@@ -168,7 +168,7 @@ class Ps1StepMixin:
 
         ttk.Label(frame, text="Date:", width=LABEL_WIDTH).grid(row=row, column=0, sticky="w", pady=4)
         date_frame = ttk.Frame(frame)
-        date_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=4)
+        date_frame.grid(row=row, column=1, columnspan=2, sticky="w", pady=4, padx=8)
 
         year_vcmd = (self.register(self._validate_year_input), "%P")
         ttk.Label(date_frame, text="Year:").grid(row=0, column=0)
