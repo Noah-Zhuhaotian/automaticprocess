@@ -59,15 +59,105 @@ USER_GUIDE.md, a non-technical user guide), `180dbb9` (README brought up
 to date with Inspection Schedule/MinuteDock/packaging, which it hadn't
 mentioned before), `09cfacc` (fixed MinuteDock's Project Name/Short Code
 being smashed into one string - see that commit's own section below for
-detail).
+detail), `6bac1ab` (MinuteDock sync and "Project is billable" both made
+required/fixed instead of optional/user-choice - see that commit's own
+section below for detail).
 
-*This* handoff is **not yet committed** - MinuteDock sync and its
-"Project is billable" setting both went from optional/user-choice to
-required/fixed, on the user's own explicit request after using the app
-for real. `app/config/settings.py`, `app/gui/main_window.py`,
+*This* handoff is **not yet committed** - a real production bug: two of
+the three drive paths in the user's actual saved settings ended up
+pointing at the *same* physical folder, which made every single Create
+fail partway through with a confusing raw `[WinError 183]` "already
+exists" error, after silently leaving an empty, document-less project
+folder behind on two of the three drives. `app/gui/steps/settings_step.py`,
+`app/gui/steps/review_step.py`, and `USER_GUIDE.md` are modified in the
+working tree:
+
+1. **Root cause, found from `app.log`, not guessed at.** The user reported
+   Create failing on job "789 - haotian" with `[WinError 183] Cannot
+   create a file when that file already exists:
+   'D:\automaticeng\engeering\789 - haotian'`, despite the General step's
+   live availability check having said the name was free moments earlier.
+   Reading `%APPDATA%\AutomaticProcess\logs\app.log` showed
+   `create_project_folders` successfully logging "Created folder" for the
+   Engineer and Drafting targets, then nothing - no traceback, no further
+   log line, for that job. Reading the user's actual
+   `%APPDATA%\AutomaticProcess\user_settings.json` explained why:
+   `admin_drive` and `engineer_drive` were both `D:/automaticeng/engeering`
+   - identical. `create_project_folders` loops over the three drive
+   targets in order (engineer, drafting, admin) and calls
+   `path.mkdir(parents=True)` on each; since the admin target is the exact
+   same `Path` value as the engineer one, its `mkdir()` call is a *second*
+   attempt to create the folder the engineer iteration had just created
+   two lines earlier - a deterministic, single-threaded bug, not a race.
+   The pre-check (`conflicts = [... if path.exists()]`) doesn't catch it
+   because *neither* copy of the duplicate path exists yet at check time -
+   only the *order* of creation within the same call matters. This is why
+   the live check said "available" (true, at data-entry time) and the log
+   showed folders genuinely being created (true, for Engineer and
+   Drafting) right before the failure - both observations the user
+   reported were accurate, they just pointed at a single-call ordering bug
+   instead of the double-invocation race this session first suspected
+   (see "What Didn't Work").
+2. **How `admin_drive` got corrupted in the first place - partly this
+   session's own fault, from an earlier handoff.** `app.log` also showed
+   an *earlier* failure that day: `admin_drive` pointing at a temp
+   directory path containing a literal BEL control character
+   (`\x07dmin` instead of `\admin`) - traced to a headless test script
+   run earlier this session (verifying the MinuteDock-required change)
+   that built a Windows path with an unescaped `"\admin"` Python string
+   literal (`\a` is a real Python escape sequence, the bell character;
+   `\eng`/`\draft` in the same script were *not* silently corrupted only
+   because `\e`/`\d` aren't recognized escapes, so Python left them
+   literal with just a warning - `\a` had no such warning). Worse, that
+   test script called `_save_settings()` for real, which calls
+   `app.config.settings.save_settings()` - a function that was never
+   mocked (only `load_settings` was, per this project's own documented
+   testing gotcha - see "What Didn't Work" in an earlier handoff), so it
+   wrote straight to the user's *actual* `user_settings.json` on disk. The
+   user apparently noticed something was wrong afterward and corrected it
+   through the Settings dialog, but ended up typing the same value for
+   Admin as Engineer, landing in the state this handoff actually debugged.
+   Both mistakes (the escaping bug and calling a real save path from a
+   test) are noted here so they aren't repeated - see "What Didn't Work".
+3. **Fixed the user's real settings and cleaned up the fallout.**
+   `admin_drive` corrected to `D:/automaticeng/admin` (confirmed against
+   the real folder layout on disk via `Get-ChildItem D:\automaticeng`,
+   not guessed - the user confirmed Engineer/Admin were "normal" names
+   with Drafting's `drawing` being their own known typo, then disk
+   contents settled Admin's exact spelling). Three jobs created while
+   `admin_drive` was broken (`789 - haotian`, `32423 - fdfs`, `3433 -
+   fdfs`) had left empty, subfolder-less, document-less project folders on
+   the Engineer and Drafting drives (confirmed empty via `Get-ChildItem
+   -Recurse` before touching anything) - deleted with the user's explicit
+   go-ahead so those job numbers/streets can be re-Created cleanly.
+4. **Two code fixes so this class of mistake is caught or at least
+   diagnosable next time**, both in the working tree:
+   - `settings_step.py`'s `_save_settings()` now rejects saving if any two
+     of the three drive paths normalize (via `os.path.normcase(os.path.
+     normpath(...))`, so `D:/x` and `D:\x` compare equal) to the same
+     folder, with a "Duplicate drive path" error naming which two fields
+     collided - this is a real configuration mistake, not just redundant
+     input, since it silently breaks every Create for that account. Also
+     documented in `USER_GUIDE.md`'s drive-paths section.
+   - `review_step.py`'s `_run_create_job` previously logged nothing at all
+     for the `except (ValueError, FileExistsError)` branch (only the
+     generic `except Exception` branch called `logger.exception`) - this
+     is exactly why the admin-folder failure left no trace in `app.log`,
+     making this bug much harder to diagnose than it needed to be. Now
+     logs a `logger.warning` there too.
+   Verified headlessly: `_save_settings()` returns `False` and doesn't
+   call `save_settings()` when Admin is set equal to Engineer (even with
+   `D:/x` vs `D:\x` slash-style differences), and returns `True` once all
+   three are distinct.
+
+Previous handoff's own changes (historical record, already pushed as
+`6bac1ab`) - MinuteDock sync and its "Project is billable" setting both
+went from optional/user-choice to required/fixed, on the user's own
+explicit request after using the app for real.
+`app/config/settings.py`, `app/gui/main_window.py`,
 `app/gui/steps/minutedock_step.py`, `app/gui/steps/review_step.py`,
-`app/gui/steps/settings_step.py`, `README.md`, and `USER_GUIDE.md` are
-modified in the working tree:
+`app/gui/steps/settings_step.py`, `README.md`, and `USER_GUIDE.md` were
+modified by that commit:
 
 1. **MinuteDock sync is no longer optional.** Previously the MinuteDock
    Personal Access Token was an optional Settings field, and the
@@ -1613,6 +1703,45 @@ themselves (see "Next Steps").
 
 ## What Didn't Work / Avoid Repeating
 
+- **A headless test script built a Windows path with a non-raw Python
+  string literal, and the drive-path corruption it caused this session
+  went unnoticed until it broke real Create attempts.**
+  `tmp + "\admin"` silently became `tmp + "\x07dmin"` - `\a` is a real
+  Python escape sequence (the BEL control character), so unlike `\eng`/
+  `\draft` in the very same script (which only got a `SyntaxWarning` for
+  `\e`/`\d`, not silently corrupted, since those aren't recognized
+  escapes), `\admin` corrupted with **no warning at all**. Worse, the
+  script then called `_save_settings()` (to test the new
+  required-token validation), which calls `app.config.settings.
+  save_settings()` - a function this project's own documented testing
+  gotcha says to mock (see the `load_settings`-patching lesson elsewhere
+  in this file) that wasn't mocked this time, since the earlier lesson
+  was framed around *reading* stale settings, not *writing* real ones -
+  so the corrupted path got written straight to the user's actual
+  `user_settings.json`. **Any path built by string concatenation for a
+  throwaway test should use a raw string (`tmp + r"\admin"`) or
+  `pathlib`/`os.path.join`, never a bare `"\word"` literal** - and any
+  test that calls a save-path (`_save_settings`, `on_save`, a mixin
+  method that ends in `save_settings(...)`), not just a load-path, needs
+  `save_settings` mocked too, the same way `load_settings` already is.
+- **Assumed a "check said available, but Create said already exists"
+  report meant a race condition (two overlapping Create calls) before
+  reading the actual log.** The reasoning seemed solid: the raw
+  `[WinError 183]` text (not this project's own friendlier "already
+  exists" message) can only come from `path.mkdir()` itself failing,
+  which meant the pre-check's `path.exists()` had passed only moments
+  before - a classic TOCTOU pattern. That reasoning was correct as far as
+  it went, but the *actual* mechanism turned out to be simpler and fully
+  deterministic: `admin_drive` and `engineer_drive` were configured to the
+  *identical* path, so the same call's own three-iteration loop wrote the
+  same folder twice, with the second write inevitably failing - no second
+  thread, no timing, no concurrency involved at all. **Reading
+  `app.log` and the actual `user_settings.json` (see this handoff's own
+  entry above) settled it in one look, where continuing to reason about
+  thread timing would not have** - the standing "inspect the actual file
+  before trusting a plausible explanation" lesson from earlier in this
+  project applies just as much to a runtime bug as it does to a `.docx`
+  template.
 - **Calling `self.after(0, callback)` directly from a background thread to
   hand a result back to tkinter.** This is widely cited as *the* standard
   cross-thread signaling idiom for tkinter, and the first version of the

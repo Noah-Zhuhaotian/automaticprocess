@@ -29,6 +29,7 @@ The first time you open the app, there's a **Settings** button in the top-right 
 
 - **Engineer drive**, **Drafting drive**, **Admin drive**: enter the path to each of these three drives on the NAS (or later, a synced OneDrive/SharePoint folder if you switch). Click the **Browse...** button next to each one to pick the folder instead of typing the path by hand.
 - All three need to be filled in before clicking **Save** takes effect. You only need to set these once - they'll be remembered for every project after that.
+- All three must point at *different* folders - if two of them are set to the same path, **Save** will refuse with a "Duplicate drive path" error instead of saving. (Two drives pointing at the same folder makes Create fail partway through with a confusing "already exists" error on every single project, after silently leaving an empty, document-less project folder behind - this check exists specifically to catch that before it happens.)
 
 ### MinuteDock access token (required)
 

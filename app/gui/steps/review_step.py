@@ -343,6 +343,7 @@ class ReviewStepMixin:
                 admin_drive=job["admin_drive"],
             )
         except (ValueError, FileExistsError) as exc:
+            logger.warning("Cannot create project folders: %s", exc)
             self._create_result_queue.put({"kind": "cannot_create", "message": str(exc)})
             return
         except Exception as exc:  # noqa: BLE001

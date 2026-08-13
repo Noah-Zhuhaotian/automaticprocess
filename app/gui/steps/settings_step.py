@@ -11,6 +11,7 @@ dialog (_open_settings_dialog, always reachable via the header's
 
 from __future__ import annotations
 
+import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -188,6 +189,27 @@ class SettingsStepMixin:
         if not token:
             messagebox.showerror("Missing info", "A MinuteDock Personal Access Token is required.")
             return False
+
+        # Two drives resolving to the same folder isn't just redundant - it
+        # makes create_project_folders() try to create the identical
+        # physical folder twice for one project and fail on the second
+        # attempt with a raw "already exists" OSError, after the first
+        # attempt already succeeded (a real incident: admin_drive got set
+        # equal to engineer_drive, silently leaving empty orphaned project
+        # folders with no documents and no MinuteDock sync for every job
+        # created in that state).
+        drives = {"Engineer": engineer, "Drafting": drafting, "Admin": admin}
+        seen: dict[str, str] = {}
+        for label, path in drives.items():
+            key = os.path.normcase(os.path.normpath(path))
+            if key in seen:
+                messagebox.showerror(
+                    "Duplicate drive path",
+                    f"{seen[key]} drive and {label} drive point at the same folder:\n{path}\n\n"
+                    "Each of the three drives needs its own separate folder.",
+                )
+                return False
+            seen[key] = label
 
         self.settings["engineer_drive"] = engineer
         self.settings["drafting_drive"] = drafting
