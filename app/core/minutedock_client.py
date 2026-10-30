@@ -35,10 +35,10 @@ class MinuteDockError(Exception):
     """Raised for any MinuteDock API failure - network, auth, or validation."""
 
 
-def _request(method: str, token: str, path: str, **kwargs: Any) -> Any:
+def _request(method: str, token: str, path: str, *, timeout: float = 30, **kwargs: Any) -> Any:
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     try:
-        response = requests.request(method, f"{BASE_URL}{path}", headers=headers, timeout=30, **kwargs)
+        response = requests.request(method, f"{BASE_URL}{path}", headers=headers, timeout=timeout, **kwargs)
     except requests.RequestException as exc:
         raise MinuteDockError(f"Could not reach MinuteDock: {exc}") from exc
 
@@ -74,6 +74,72 @@ def _find_by_field(items: list[dict[str, Any]], field: str, value: str) -> dict[
     return None
 
 
+# Listing calls are also made from the UI thread (the General step's
+# Contact picker, job-number uniqueness check, documents_only Project
+# lookup), so they use a shorter timeout than a background Create - an
+# unreachable network shouldn't freeze the window for 30 seconds.
+LIST_TIMEOUT = 10
+
+
+def list_contacts(token: str) -> list[dict[str, Any]]:
+    return _request("GET", token, "/contacts", params={"active": "true"}, timeout=LIST_TIMEOUT)
+
+
+def list_projects(token: str) -> list[dict[str, Any]]:
+    return _request("GET", token, "/projects", params={"active": "true"}, timeout=LIST_TIMEOUT)
+
+
+def find_project_by_short_code(token: str, short_code: str) -> dict[str, Any] | None:
+    """The job number is the Project's Short Code and is unique per job, so
+    it identifies a Project across every Contact. Active Projects are
+    checked first, then archived (inactive) ones - an archived job still
+    owns its job number."""
+    project = _find_by_field(list_projects(token), "short_code", short_code)
+    if project is None:
+        archived = _request("GET", token, "/projects", params={"active": "false"}, timeout=LIST_TIMEOUT)
+        project = _find_by_field(archived, "short_code", short_code)
+    return project
+
+
+def update_project(token: str, project_id: str, fields: dict[str, Any]) -> dict[str, Any]:
+    """PUT /projects/{projectId} (https://developers.minutedock.com/#tag/Projects).
+    The API requires `name` and `contact_id` in every update body, even when
+    only other fields change - callers must include them in `fields`.
+
+    The body is nested under "project", per the docs' Request Format section
+    and matching the POST that find_or_create_project already uses
+    successfully (the update operation's own example shows unnested fields,
+    so the docs disagree with themselves here). Also not documented: whether
+    sending budget fields as null clears a budget - confirm against a test
+    Project in MinuteDock's web UI.
+    """
+    return _request("PUT", token, f"/projects/{project_id}", json={"project": fields})
+
+
+# Project budget fields (budget_type / budget_frequency / budget_target, per
+# the Project schema's _BudgetProperties). The app only ever sets a
+# "$ Billable" budget "in total" (one budget for the whole project, never
+# resets). Enum values per the API docs: budget_type is "hours" | "billable"
+# (null = budget not tracked), budget_frequency is "total" | "weekly" |
+# "monthly" | "quarterly" | "yearly", and budget_target is a number - hours
+# or dollars depending on the type.
+BUDGET_TYPE_BILLABLE = "billable"
+BUDGET_FREQUENCY_TOTAL = "total"
+
+
+def budget_fields(budget_dollars: str | None) -> dict[str, Any]:
+    """Project fields for a "$ Billable, in total" budget of `budget_dollars`,
+    or all-None (no budget) when it's None."""
+    if budget_dollars is None:
+        return {"budget_type": None, "budget_frequency": None, "budget_target": None}
+    return {
+        "budget_type": BUDGET_TYPE_BILLABLE,
+        "budget_frequency": BUDGET_FREQUENCY_TOTAL,
+        # A number in the API (not a CurrencyString like default_rate_dollars).
+        "budget_target": float(budget_dollars),
+    }
+
+
 def find_or_create_contact(token: str, name: str) -> dict[str, Any]:
     contacts = _request("GET", token, "/contacts", params={"active": "true"})
     existing = _find_by_field(contacts, "name", name)
@@ -90,13 +156,16 @@ def find_or_create_project(
     name: str,
     short_code: str,
     billable: bool,
-    default_rate_dollars: str | None,
+    budget_dollars: str | None,
 ) -> dict[str, Any]:
     """`name` is the display name (street only - the job number belongs in
     `short_code`, not smashed into the same string); `short_code` is also
     the match key for find-or-create, since the job number - not the
     street - is the actual unique identifier for a project (two different
     jobs could plausibly share a street name; job numbers don't repeat).
+
+    No default_rate_dollars is ever sent, so the Project always uses its
+    Contact's rates. `budget_dollars` None means no budget.
     """
     projects = _request("GET", token, "/projects", params={"contact_id": contact_id, "active": "true"})
     existing = _find_by_field(projects, "short_code", short_code)
@@ -109,7 +178,7 @@ def find_or_create_project(
         "contact_id": contact_id,
         "billable": billable,
     }
-    if default_rate_dollars is not None:
-        project["default_rate_dollars"] = default_rate_dollars
+    if budget_dollars is not None:
+        project.update(budget_fields(budget_dollars))
 
     return _request("POST", token, "/projects", json={"project": project})

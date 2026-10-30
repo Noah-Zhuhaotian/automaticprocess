@@ -92,6 +92,83 @@ def check_availability(
     return [path for path in targets.values() if path.exists()]
 
 
+def parse_project_folder_name(name: str) -> tuple[str, str] | None:
+    """Split a folder name in this app's "{job_number} - {street}" format
+    back into (job_number, street). Returns None for any folder not in that
+    format (no " - ", or an empty job number or street) - those aren't
+    project folders this app made, so callers skip them."""
+    job_number, separator, street = name.partition(" - ")
+    job_number, street = job_number.strip(), street.strip()
+    if not separator or not job_number or not street:
+        return None
+    return job_number, street
+
+
+def find_job_number_conflicts(
+    job_number: str,
+    engineer_drive: str,
+    drafting_drive: str,
+    admin_drive: str,
+) -> list[Path]:
+    """Job numbers are unique per job regardless of street: every project
+    folder on every configured drive is parsed back into its job number
+    (parse_project_folder_name - folders not in the "{job_number} -
+    {street}" format are skipped), and any whose job number equals this one
+    (case-insensitive) is a conflict, whatever its street. Unconfigured or
+    unreachable drives are skipped rather than raising.
+    """
+    target = job_number.strip().casefold()
+    if not target:
+        return []
+
+    conflicts: list[Path] = []
+    for drive_root in (engineer_drive, drafting_drive, admin_drive):
+        drive_root = drive_root.strip()
+        if not drive_root:
+            continue
+        root = Path(drive_root)
+        try:
+            if not root.is_dir():
+                continue
+            for entry in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+                if not entry.is_dir():
+                    continue
+                parsed = parse_project_folder_name(entry.name)
+                if parsed is not None and parsed[0].casefold() == target:
+                    conflicts.append(entry)
+        except OSError:
+            continue
+    return conflicts
+
+
+def list_available_project_folders(engineer_drive: str) -> list[str]:
+    """Project folders on the Engineer drive with no documents yet in "06
+    Consent Document" - candidates for "fill documents into an existing
+    folder" mode (app/gui/steps/mode_step.py). A folder qualifies if its
+    name follows the "{job_number} - {street}" convention (so it can be
+    split back apart the same way build_project_folder_name built it) and
+    its "06 Consent Document" subfolder is missing or has zero files in it.
+    """
+    engineer_drive = engineer_drive.strip()
+    if not engineer_drive:
+        return []
+    root = Path(engineer_drive)
+    if not root.is_dir():
+        return []
+
+    candidates: list[str] = []
+    try:
+        for entry in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+            if not entry.is_dir() or parse_project_folder_name(entry.name) is None:
+                continue
+            consent_dir = entry / "06 Consent Document"
+            if not consent_dir.is_dir() or not any(consent_dir.iterdir()):
+                candidates.append(entry.name)
+    except OSError:
+        return []
+    return candidates
+
+
 def create_project_folders(
     job_number: str,
     street: str,

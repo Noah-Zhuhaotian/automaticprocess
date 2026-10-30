@@ -13,6 +13,7 @@ from tkinter import messagebox, simpledialog, ttk
 from app.config.settings import save_settings
 from app.gui.constants import (
     ALL_PART_OPTIONS,
+    ALTERNATIVE_SOLUTION_TEXT,
     B1_OPTIONS,
     CM_ITEMS,
     LABEL_WIDTH,
@@ -38,7 +39,6 @@ class Ps1StepMixin:
         self.compliance_var = tk.BooleanVar(value=False)
         self.alternative_var = tk.BooleanVar(value=False)
         self.b1_vars: dict[str, tk.BooleanVar] = {item: tk.BooleanVar(value=False) for item in B1_OPTIONS}
-        self.alternative_solution_text = ""
         self.date_year_var = tk.StringVar()
         self.date_month_var = tk.StringVar()
         self.date_day_var = tk.StringVar()
@@ -303,15 +303,12 @@ class Ps1StepMixin:
         if widget is None or not widget.winfo_exists():
             return
 
-        if self.alternative_var.get():
-            widget.configure(state="normal")
-            widget.delete("1.0", "end")
-            widget.insert("1.0", self.alternative_solution_text)
-        else:
-            widget.configure(state="normal")
-            widget.delete("1.0", "end")
-            widget.insert("1.0", "N/A")
-            widget.configure(state="disabled")
+        # Read-only either way: the fixed Alternative solution text when
+        # Alternative is ticked, "N/A" when it isn't - nothing to type.
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", ALTERNATIVE_SOLUTION_TEXT if self.alternative_var.get() else "N/A")
+        widget.configure(state="disabled")
 
     def _sync_ps1_text_fields(self) -> None:
         if self._description_of_work_widget is not None and self._description_of_work_widget.winfo_exists():
@@ -320,12 +317,6 @@ class Ps1StepMixin:
             self.legal_description_text = self._legal_description_widget.get("1.0", "end-1c")
         if self._site_verification_widget is not None and self._site_verification_widget.winfo_exists():
             self.site_verification_text = self._site_verification_widget.get("1.0", "end-1c")
-        if (
-            self.alternative_var.get()
-            and self._alternative_solution_widget is not None
-            and self._alternative_solution_widget.winfo_exists()
-        ):
-            self.alternative_solution_text = self._alternative_solution_widget.get("1.0", "end-1c")
 
     def _validate_ps1_step(self) -> bool:
         self._sync_ps1_text_fields()
@@ -340,8 +331,5 @@ class Ps1StepMixin:
             return False
         if not self.compliance_var.get() and not self.alternative_var.get():
             messagebox.showerror("Missing info", 'Select "Compliance" and/or "Alternative".')
-            return False
-        if self.alternative_var.get() and not self.alternative_solution_text.strip():
-            messagebox.showerror("Missing info", 'Alternative solution is required when "Alternative" is selected.')
             return False
         return True

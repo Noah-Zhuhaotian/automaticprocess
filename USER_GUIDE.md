@@ -4,13 +4,15 @@ This guide is for everyday users - no code or technical background needed, just 
 
 ## What this software does
 
-A few clicks and one form, and it automatically handles three things:
+You fill in one step-by-step form, and the software does the repetitive project setup for you:
 
-1. **Create folders** - automatically creates a project folder on the Engineer, Drafting, and Admin drives, named from the job number and address (the Engineer drive also gets 6 fixed subfolders created automatically).
-2. **Fill Word documents** - automatically generates six documents (Project register, PS1, LBP form, Calculation Statement, Specifications, B2 Letter), filled in with the information you entered.
-3. **Sync to MinuteDock** - creating a project also automatically creates the matching Contact and Project on MinuteDock.
+1. **Creates the project folders** - one folder on each of the Engineer, Drafting and Admin drives, named "job number - street" (e.g. "23432 - 217 Armagh Street"). The Engineer folder also gets 6 fixed subfolders (01 Architectural ... 06 Consent Document).
+2. **Fills in the Word documents** - six documents (Project register, PS1 Producer Statement, LBP form, Calculation Statement, Specifications, B2 Letter) are generated from what you entered.
+3. **Sets the project up in MinuteDock** - the client (Contact) and the project are created in MinuteDock, so time can be logged against it.
 
-All three happen together on every Create - a MinuteDock access token must be set up in Settings before you can use the app at all (see below).
+You choose at the start whether to do all three, only create the folders, or come back later to fill in the documents. You can also save your usual settings as a **template**, and create several jobs at once from a template.
+
+Everything you enter for a project is saved, so you can **open the project again later**, change something, and regenerate its documents.
 
 ## Installing
 
@@ -19,120 +21,159 @@ All three happen together on every Create - a MinuteDock access token must be se
 3. Click through "Next," choosing whether you want a desktop shortcut.
 4. Once installed, you'll find "Automatic Process Assistant" in the Start Menu, and on the desktop if you chose that option.
 
-For a future version, just run the new Setup.exe again to install over the old one - no need to uninstall first.
+**Updating:** just run the new Setup.exe over the old one - no need to uninstall first. Your settings, council list, saved projects and templates are kept: they're stored in your Windows user folder, not in the program folder, so installing a new version (or even uninstalling) never deletes them.
 
 ## First thing to do after opening: Settings
 
-The first time you open the app, there's a **Settings** button in the top-right corner of the window (you can open it any time afterward too).
+The first time you open the app it asks for its Settings. You can change them any time afterwards with the **Settings** button in the top-right corner.
 
 ### The three drive paths (required)
 
-- **Engineer drive**, **Drafting drive**, **Admin drive**: enter the path to each of these three drives on the NAS (or later, a synced OneDrive/SharePoint folder if you switch). Click the **Browse...** button next to each one to pick the folder instead of typing the path by hand.
-- All three need to be filled in before clicking **Save** takes effect. You only need to set these once - they'll be remembered for every project after that.
-- All three must point at *different* folders - if two of them are set to the same path, **Save** will refuse with a "Duplicate drive path" error instead of saving. (Two drives pointing at the same folder makes Create fail partway through with a confusing "already exists" error on every single project, after silently leaving an empty, document-less project folder behind - this check exists specifically to catch that before it happens.)
+- **Engineer drive**, **Drafting drive**, **Admin drive**: the folder on the NAS (or a synced OneDrive/SharePoint folder) where each drive's project folders live. Use **Browse...** to pick the folder instead of typing it.
+- All three must be filled in, and all three must be *different* folders - if two are the same, **Save** refuses with a "Duplicate drive path" error (two drives pointing at the same folder would make every Create fail halfway).
 
 ### MinuteDock access token (required)
 
-The app syncs every project to MinuteDock automatically, so this token is required - **Save** won't take effect until it's filled in, alongside the three drive paths above.
+The app sets up every project in MinuteDock, so it needs an access token.
 
-**How to get this token:**
+**How to get the token:**
 
-1. Open a browser and log in to your MinuteDock account (minutedock.com).
+1. Log in to MinuteDock (minutedock.com) in a browser.
 2. Click your avatar/username in the top right and open **Profile**.
-3. Find **Manage Access Tokens** and click into it.
-4. Click **Create Token**, give it a recognizable name (e.g. "Automatic Process Assistant"), and choose which MinuteDock account it should use.
-5. A long string of characters will be shown - **this is only ever shown once**, so copy it immediately. Once you leave the page you won't be able to see it again (if you lose it, you'll just need to create a new one).
-6. Back in Automatic Process Assistant's Settings window, paste that string into the **MinuteDock token** field.
-7. Click the **Test connection** button next to it - if you see a "connection successful" message with your account name, it's entered correctly.
+3. Open **Manage Access Tokens**.
+4. Click **Create Token**, give it a name (e.g. "Automatic Process Assistant"), and choose the MinuteDock account.
+5. A long string is shown - **it's only shown once**, so copy it straight away (if you lose it, just create a new one).
+6. Paste it into the **MinuteDock token** field in Settings.
+7. Click **Test connection** - a "connection successful" message with your account name means it's right.
 8. Click **Save**.
 
-The **MinuteDock** step (where you set how this project should be billed on MinuteDock, see below) appears while filling in project details every time - this token is required to move past Settings at all.
+Treat the token like a password. If you think it's been leaked, delete it on the Manage Access Tokens page and create a new one.
 
-Treat this token like a password - don't share it with anyone who doesn't need it. If you think it's been compromised, go back to the Manage Access Tokens page on MinuteDock, delete the old one, and create a new one.
+## Step 1 - Choose what to do (Create mode)
 
-## Filling in a new project
+Every project starts on the **Create mode** page. Pick one:
 
-Once Settings is done, you're ready to use the app normally. The top of the window shows "Step X of Y" - just follow it step by step. Click **Next >** at the bottom right to move to the next step once the current one is filled in, or **< Back** to go back and change something.
+| Option | What it does |
+|---|---|
+| **Create project folders only** | Makes the folders and the MinuteDock project - no documents. Use this to set a job up now and do the paperwork later. |
+| **Open an existing project (fill or regenerate its documents)** | Pick an existing project folder, then fill in (or change) its details and generate its documents. |
+| **Create folders and documents together (normal)** | Everything at once - folders, the six documents, and MinuteDock. |
+| **Create several jobs from a template** | Create many jobs in one go - you only type each job's number, client and address. See "Creating several jobs at once" below. |
 
-### General (basic project info)
+**Start from template** (for "folders only", "normal" and "several jobs"): pick a saved template and every page except General is filled in for you. You can still change anything on any page. Choose "(none)" to start blank. See "Templates" below.
 
-- **Job number**: the project's job number.
-- **Client info**: client details.
-- **Street / Suburb / Town**: the address, split into three fields (only the Street field is used to build the project folder name, e.g. "1234 - 211 Ferry Rd").
-- After you fill in Job number and Street, a message below will tell you in real time whether that project name is "already in use" - if it shows in red, that name has already been used and you'll need to change the Job number or Street before you can continue.
-- **Scope**: tick whichever project types apply (Foundation / Retaining / Beams / Portal / Bracing / Others). For each one you tick, you need to fill in a description in the box next to it (one line per point - press Enter between lines, and each line will become its own bullet point in the generated documents). At least one must be ticked.
-- **Role**: your role on this project - Carried out or Supervised. Pick one.
+### Opening an existing project
 
-### PS1 Input (information for the PS1 report)
+When you choose **Open an existing project**, a list of project folders appears. It shows:
+- project folders that don't have documents yet (e.g. ones made with "folders only"), and
+- any project that was created with this app before, even if it already has documents.
 
-- **Council name**: pick from the dropdown. If the council you need isn't listed, click **Add Council...** to add it (it'll stay in the list from then on); use **Edit Council...** to rename one.
-- **Description of work**, **Legal description**, **Site verification**: three multi-line text boxes - fill in as appropriate.
-- **Scope of statement**: choose All or Part only.
-- **Level of construction monitoring**: CM1 through CM5, multiple selections allowed.
-- **Basis of statement**: Compliance and Alternative are two independent checkboxes - you can tick just one, or both, but at least one must be ticked.
-  - Ticking Compliance enables the **Compliance method(s)** options below it (B1/VM1, B1/MV4, B1/AS1 - multiple selections allowed).
-  - Ticking Alternative enables the **Alternative solution** text box below it, which then becomes required; if left unticked, this field is automatically filled with "N/A" - no need to touch it.
-- **Date**: fill in a 4-digit Year first - Month can't be picked until Year is valid, and Day can't be picked until Month is chosen (the day count is automatically correct for the month/leap year). Or just click **Today** to fill in today's date in one click.
+After you pick one, every page is filled in with what was entered last time - just change what you need. The job number and street can't be changed (they're the folder's name). The top of every page shows which folder you're working on.
 
-### Inspection Schedule
+If the project already has documents, clicking Create **moves the old documents into a `_previous versions` folder** (inside the project folder, with the date and time) before making the new ones - nothing is deleted. If one of the old documents is open in Word, close it first.
 
-This step corresponds to the "Schedule 3 - Schedule of Inspections" table in the PS1 report.
+In MinuteDock, no new project is made - the job's existing project is used, and its budget is only changed if you changed it.
 
-- Tick whichever of the 7 common inspection items apply.
-- If you need additional inspection items, click **Add Other** to add as many as you like - each one needs an **Item of inspection** and a **Time frame** filled in; click the **Remove** button next to one to delete it.
-- The list box below shows the current order of everything selected (both fixed items and any Other items you added). Select an item in the list and use **Move Up** / **Move Down** to reorder it - this order becomes the numbering in the final document's table (starting from 1), and fixed items and Other items can be freely mixed in any order, not just Other-items-always-last.
-- At least one item must be selected.
+## Step 2 - General
 
-### Waivers and Modifications (for the LBP form)
+- **Job number**: the job number. **Job numbers must be unique** - you can't continue if the number is already used by any project folder on any of the three drives (whatever its street), or by any project in MinuteDock (including archived ones). A message under the fields tells you straight away if the number is taken.
+- **Client info**: pick the client from the list of your MinuteDock contacts. If it's a new client, click **Add new contact...** and type the name - it's added to MinuteDock when you click Create. (**Refresh** reloads the list from MinuteDock. If MinuteDock can't be reached, you can type the name directly.)
+- **Street / Suburb / Town**: the address. Only the Street is used in the folder name.
 
-- First choose **Yes** or **No** (whether a waiver or modification of the Building Code is required).
-- Only when Yes is chosen do you need to fill in **Building Code Clause** and **Waiver/modification required** below - both become required. Choosing No automatically clears and disables both fields - no need to touch them.
+When you're opening an existing project, the client is fixed to the one its MinuteDock project already belongs to.
 
-### Specification (selecting sections)
+## Step 3 - Scope
 
-- Tick whichever sections apply (7 options: GENERAL STRUCTURAL CONSTRUCTION / EXCAVATION AND HARDFILL / CONCRETE - GENERAL / REINFORCING STEEL / STRUCTURAL STEELWORK / STRUCTURAL TIMBER / MASONRY BLOCKWORK). At least one must be ticked - any section left unticked is removed entirely from the final document.
-- Some sections reveal extra numeric fields once ticked:
-  - Excavation: Ultimate bearing capacity (kPa).
-  - Concrete: Precast elements / Foundations-Plain Concrete / Foundations-Fibre Concrete / Metal deck topping, all in MPa.
-  - Masonry Blockwork: Grout strength - this one is a dropdown (17.5 MPa (Zone B) / 20 MPa (Zone C) / 25 MPa (Zone D)), not typed by hand.
-- These fields are only enabled/required while their section is ticked - unticking a section automatically clears and disables its fields.
+- Tick each scope item that applies (Foundation / Retaining / Beams / Portal / Bracing / Others) and describe it in the box next to it. Press Enter between points - each line becomes its own bullet point in the documents. At least one must be ticked.
+- **Role**: Carried out or Supervised.
 
-### B2 Letter (material selection)
+## Step 4 - PS1 Input
 
-- Tick whichever materials apply (Reinforced concrete / Structural timber / Mild steel structure) - at least one must be ticked. Whichever you tick, the matching row stays in the B2 Letter document's compliance table; unticked ones are removed. The row content itself is fixed - this step only decides which rows appear.
+- **Council name**: pick from the list. **Add Council...** adds a new one (it stays in the list from then on); **Edit Council...** renames one.
+- **Description of work**, **Legal description**, **Site verification**: free text.
+- **Scope of statement**: All or Part only.
+- **Level of construction monitoring**: CM1 to CM5, tick any.
+- **Basis of statement**: Compliance and/or Alternative (at least one).
+  - Compliance enables the **Compliance method(s)**: B1/VM1, B1/VM2, B1/AS1.
+  - Alternative fills the **Alternative solution** automatically with "Repairing and rebuilding houses affected by the Canterbury Earthquake December 2012." - nothing to type. If Alternative isn't ticked it shows "N/A".
+- **Date**: type the year first, then pick the month and day - or click **Today**.
 
-### MinuteDock (always appears)
+## Step 5 - Inspection Schedule
 
-Every project is created as billable on MinuteDock automatically - there's no toggle for this, since unchecking it on MinuteDock's own side stops time entries from being logged against that project at all.
+This is the "Schedule of Inspections" table in the PS1 report (columns: No., Item of inspection, Time frame).
 
-- Choose one billing method:
-  - **Use contact rates**: uses whatever default rate is already set for this client in MinuteDock.
-  - **Set a standard rate for this project**: sets a fixed hourly rate just for this project - only when this is chosen do you need to fill in the rate below it.
+- Tick which of the 7 standard inspections apply - each already has its time frame (when the inspection happens) filled in.
+- **Add Other** adds your own inspection. Its **Item of inspection** box is a dropdown of Other items you've used before - picking one also fills in its **Time frame**. You can also type a new one; new ones are remembered for next time when you click Create. **Remove** deletes a row.
+- The list at the bottom is the final order. Select an item and use **Move Up** / **Move Down** - this order becomes the numbering in the table.
 
-### Review & Create (confirm and generate)
+## Step 6 - Waivers and Modifications (LBP form)
 
-The final step - the button changes to **Create**. Clicking it makes the software, in order:
+- Choose **Yes** or **No**. Only with Yes do you fill in **Building Code Clause** and **Waiver/modification required**.
 
-1. Create the project folders on all three drives.
-2. Generate the six Word documents.
-3. Sync the matching Contact and Project to MinuteDock.
+## Step 7 - Specification
 
-While this runs, a small "Creating project, please wait..." window with a moving progress bar will appear - this is completely normal and means the software is working in the background, not stuck. It usually takes a few seconds to around ten seconds depending on the number of documents and network conditions; the window being temporarily unresponsive during this time is expected.
+- Tick which sections of the Specification apply; unticked sections are removed from the document.
+- Some sections have values to fill in (numbers only):
+  - **Excavation and Hardfill**: Ultimate bearing capacity (kPa).
+  - **Concrete - General**: each strength has its own tickbox - **Precast elements**, **Foundations - Plain Concrete**, **Foundations - Fibre Concrete**, **Metal deck topping**, **Others** (all MPa). Only the ticked ones are written into the document; tick at least one.
+  - **Masonry Blockwork**: Grout strength, chosen from a list.
 
-Once everything succeeds, a green checkmark "Done" message appears - click OK to close it, and the software automatically clears everything project-specific (your drive settings, MinuteDock token, and council list are all "long-term settings" and are NOT cleared), returning you to the General step, ready to start the next project.
+## Step 8 - B2 Letter
 
-**If something fails partway through** (e.g. a document fails to generate, or the MinuteDock sync fails): a warning will tell you exactly what succeeded and what failed. Anything that already succeeded (folders, documents already generated) is kept, not undone. **In this situation, don't just click Create again right away** - since the folders already exist, clicking again will fail immediately with an "already exists" error. Instead, figure out what went wrong first (e.g. a wrong MinuteDock token - go fix it in Settings), then contact whoever maintains this software if you're not sure how to proceed.
+- Tick which materials apply (Reinforced concrete / Structural timber / Mild steel structure). Only the ticked rows appear in the letter's table.
+
+## Step 9 - MinuteDock
+
+- **Rates**: always "Use contact rates" (the client's own rate in MinuteDock).
+- **Set a budget** (optional): tick it to give the project a **$ Billable** budget **in total** (one amount for the whole project). Numbers only.
+- Every project is created as billable - unchecking billable in MinuteDock would stop time being logged against it.
+
+When you're opening an existing project, this page shows the project's current budget from MinuteDock; it's only updated if you change it.
+
+## Step 10 - Review & Create
+
+This page lists **everything you entered** on every page, so you can check it all before creating. To change something, click **< Back**.
+
+Click **Create**. A "please wait" window with a moving bar appears while it works - that's normal; it usually takes a few seconds. When it's done a green ✔ message appears, and the app goes back to the Create mode page for the next project. Your settings, councils and templates are never cleared.
+
+**If something fails partway** (e.g. a document is open in Word, or MinuteDock can't be reached), a message tells you what was created and what failed. What was already created is kept. Don't just click Create again - the folders now exist, so the job number counts as used. Instead, use **Open an existing project** to finish it.
+
+## Templates
+
+A template stores everything **except** the General page (job number, client, address) and the PS1 date: Scope, Role, PS1 Input, Inspection Schedule, Waivers, Specification, B2 Letter, and the MinuteDock budget.
+
+- **Save a template**: fill in a project as usual, and on the Review & Create page click **Save these settings as a template...** and give it a name. (If the name exists, you're asked before it's replaced.)
+- **Use a template**: on the Create mode page, choose it under **Start from template**.
+- **Manage templates**: click **Manage templates...** on the Create mode page:
+  - **Edit values...** - goes through the template's pages so you can change them; the last page's button is **Save template** (nothing is created). **Cancel editing** on the first page leaves without saving.
+  - **Rename...** / **Delete**.
+
+## Creating several jobs at once
+
+1. On the Create mode page choose **Create several jobs from a template** and pick the **Template**.
+2. On the **Jobs** page, fill in one row per job: Job number, Client (pick or type a new one), Street, Suburb, Town. **Add job** adds a row; **Remove** deletes one.
+3. Click Next - the app checks every row (missing fields, the same job number twice in the table, or a job number that's already used).
+4. Review & Create lists all the jobs and the template's settings. Click **Create all**.
+
+Each job is created completely (folders, the six documents with today's date, MinuteDock) one after another - the progress window shows which one it's on. If one job fails, the others still go ahead. At the end you get a list:
+
+- **OK** - created.
+- **PARTIAL** - folders/documents were created but something else failed (e.g. MinuteDock) - fix it later with **Open an existing project**.
+- **FAILED** - not created at all; these jobs stay in the table so you can fix them and click **Create all** again.
 
 ## Frequently Asked Questions
 
-**Q: What does "Already exists on: ..." on the General step mean?**
-It means a project folder for this Job number + Street combination has already been created on one of the drives. Change the Job number or Street to continue - this exists to prevent two different projects from overwriting the same folder name.
+**Q: It says the job number is already used.**
+A project folder with that job number exists on one of the drives (with any street), or a MinuteDock project already uses it. Job numbers must be unique - use another number, or use **Open an existing project** if you meant to work on that existing job.
 
 **Q: Why won't Settings let me past it?**
-All three drive paths and the MinuteDock token are required - **Save** won't take effect until every one of them is filled in. Use **Test connection** to confirm the token itself is correct.
+All three drive paths and the MinuteDock token are required, and the drive paths must all be different. Use **Test connection** to check the token.
 
-**Q: The Council name dropdown is empty and won't open?**
-That means no council names have been added yet - click **Add Council...** to add the first one.
+**Q: The Council name list is empty?**
+No councils have been added yet - click **Add Council...**.
 
-**Q: A Word document failed partway through generation?**
-The most common cause is that the document being generated is currently open in Word by someone else (e.g. a colleague has the template file open to look at it) - close it in Word and try again.
+**Q: A Word document failed while generating?**
+Usually the file (or the template) is open in Word - close it and try again.
+
+**Q: Where is my saved data kept?**
+In your Windows user folder (`%APPDATA%\AutomaticProcess`): settings, saved projects (`projects`), templates (`templates`) and logs. It's only on this computer, and software updates don't remove it.

@@ -1,135 +1,101 @@
 # automaticprocess
 
 A Windows desktop app (tkinter; packaged as a Windows installer via
-PyInstaller + Inno Setup) that automates repetitive project-setup work
-for an engineering office. A step-by-step wizard collects a project's
-info once, then a single **Create** click:
+PyInstaller + Inno Setup) that automates repetitive project setup for an
+engineering office. A step-by-step wizard collects a project's info once,
+then **Create**:
 
-1. Builds the project folder structure across three NAS drives
-   (Engineer / Drafting / Admin)
-2. Fills in six Word document templates (Project register, PS1 Producer
-   Statement, LBP form, Calculation Statement, Specifications, B2
-   Letter) from the same data — including toggling real, interactive
-   Word checkboxes, inserting genuine bulleted lists (not typed
-   look-alikes), and letting the user pick which sections/rows of the
-   longer documents apply to this project
-3. Syncs the matching Contact and Project to
-   [MinuteDock](https://minutedock.com) via its REST API — the token is
-   required during Settings, so this always runs
+1. Builds the project folder structure on three NAS drives (Engineer /
+   Drafting / Admin), named `"{job number} - {street}"`
+2. Fills six Word templates (Project register, PS1 Producer Statement, LBP
+   form, Calculation Statement, Specifications, B2 Letter) - real Word
+   checkboxes, genuine bulleted lists, user-selected sections/table rows
+3. Creates the matching Contact and Project in
+   [MinuteDock](https://minutedock.com) via its REST API
 
-While Create runs, a "please wait" progress dialog with an indeterminate
-bar shows the app is working rather than appearing to hang — the actual
-work runs on a background thread so the window stays responsive. After a
-successful Create, a green ✔ success dialog confirms it, then the wizard
-resets itself and jumps back to General, ready for the next project.
-Drive paths, the MinuteDock token, and the saved council list are app
-configuration and are never cleared by this reset.
+The wizard has four **Create modes** (folders only / open an existing
+project / folders + documents / batch from a template), every Create saves
+its input so the project can be reopened and regenerated, and reusable
+**templates** pre-fill everything except the per-job General fields.
 
-Non-technical usage instructions (installing, first-time setup, what
-each field means, where to get a MinuteDock token) live in
-[USER_GUIDE.md](USER_GUIDE.md) — this README is for developers.
+Non-technical usage instructions live in [USER_GUIDE.md](USER_GUIDE.md).
+**New to the codebase? Read [HANDOFF.md](HANDOFF.md) first** - it covers
+architecture, conventions, gotchas and open items.
 
-## Wizard steps
+## Wizard
 
-**Settings** (drive paths + MinuteDock token — shown only on first run,
-i.e. while any of the three drive paths or the token is unconfigured;
-reachable afterwards via the **Settings** button) → **General** (job
-number, client, street/suburb/town, scope, role) → **PS1 Input**
-(council, descriptions, PS1 checkboxes/dates) → **Inspection Schedule**
-(PS1's Schedule of Inspections table — pick which typical items apply,
-add any number of free-text "Other" items, order everything) → **Waivers
-and Modifications** (LBP form's YES/NO waiver section) →
-**Specification** (pick which of Specifications.docx's 7 sections apply)
-→ **B2 Letter** (pick which material rows apply) → **MinuteDock**
-(rate — always shown, sync is required; every project is created
-billable=True with no user-facing toggle, since unchecking it on
-MinuteDock's own side blocks time entries) → **Review & Create**.
+Settings (first run only) → **Create mode** → then, depending on the mode:
+
+| Mode (`create_mode_var`) | Steps after Create mode | Create does |
+|---|---|---|
+| `folder_only` | General → MinuteDock → Review | folders + MinuteDock Project |
+| `documents_only` ("Open an existing project") | General → Scope → PS1 Input → Inspection Schedule → Waivers → Specification → B2 Letter → MinuteDock → Review | documents into the existing folder (old ones moved to `_previous versions/`); reuses the job's MinuteDock Project |
+| `both` (default) | same as above | folders + documents + MinuteDock |
+| `batch` | Jobs (table of per-job General fields) → Review | one `both` job per row, template-filled |
+| `edit_template` (internal) | Edit template → Scope … MinuteDock → Review & Save | saves the template, creates nothing |
+
+Review & Create shows a full summary of everything entered.
 
 ## Project structure
 
 ```
 app/
-├── main.py               # entry point, launches the GUI
-├── gui/
-│   ├── main_window.py    # MainWindow: window setup + step-list/navigation only
-│   ├── constants.py      # constants shared across steps (item lists, template paths, ...)
-│   └── steps/             # one mixin class per wizard step (build/validate/tk-vars)
-├── core/
-│   ├── folder_creator.py     # Step 1 — folder creation, IMPLEMENTED
-│   ├── word_filler.py        # Step 2 — Word template filling, IMPLEMENTED
-│   ├── web_filler.py         # Step 3 — MinuteDock sync business logic, IMPLEMENTED
-│   └── minutedock_client.py  # Step 3 — thin MinuteDock REST API wrapper
-├── config/settings.py    # user settings persisted to %APPDATA%\AutomaticProcess\user_settings.json
-└── utils/logger.py       # logs to console (when one exists) + %APPDATA%\AutomaticProcess\logs\app.log
+├── main.py                    # entry point
+├── config/settings.py         # %APPDATA%\AutomaticProcess\user_settings.json
+├── utils/logger.py            # console + %APPDATA%\AutomaticProcess\logs\app.log
+├── core/                      # no tkinter - safe on the Create worker thread
+│   ├── folder_creator.py      # folder naming/parsing, job-number uniqueness, creation
+│   ├── word_filler.py         # Word template filling engine
+│   ├── minutedock_client.py   # thin MinuteDock REST wrapper
+│   ├── web_filler.py          # MinuteDock business logic (find-or-create, budget update)
+│   ├── project_store.py       # saved wizard input per job  (%APPDATA%\...\projects\<job>.json)
+│   └── template_store.py      # saved templates             (%APPDATA%\...\templates\<name>.json)
+└── gui/
+    ├── main_window.py         # MainWindow: composes the step mixins, step list, navigation
+    ├── constants.py           # shared lists, template paths, fixed texts
+    ├── project_state.py       # clear / collect / apply every per-project field (saves, reopen, templates)
+    └── steps/                 # one mixin per step (vars, build, validate)
+        settings_step, mode_step, template_step, batch_step, general_step,
+        scope_step, ps1_step, inspection_step, waivers_step,
+        specification_step, b2_letter_step, minutedock_step,
+        review_step (Create orchestration + worker), review_summary
 
-resources/
-├── templates/             # Word templates filled at Create time (see below)
-├── automation.png         # source image for the app icon
-└── app_icon.ico           # generated from automation.png - see build_scripts/README.md
-
-build_scripts/
-├── automaticprocess.spec  # PyInstaller: onedir, windowed build
-├── installer.iss          # Inno Setup: wraps the onedir build into Setup.exe
-├── output/                 # gitignored - AutomaticProcess-Setup.exe lands here
-└── README.md               # build instructions
-
-USER_GUIDE.md             # non-technical usage guide, ships alongside the installer
-tests/                     # empty - no automated tests yet
-main.py                    # root entry script: `python main.py`
-requirements.txt
+resources/templates/           # the six Word templates
+build_scripts/                 # PyInstaller spec + Inno Setup script (see its README)
+USER_GUIDE.md / HANDOFF.md
 ```
 
 ## Word templates (`resources/templates/`)
 
-- **`Project register.docx`** — placeholders `{{job_number}}`,
-  `{{address}}` (fed from Street only), `{{scope}}` (genuine bulleted
-  list, see below).
-- **`PS1 Producer Statement.docx`** — text placeholders, real Word
-  checkbox content controls (each tagged via `<w:tag>` so the app can
-  find and toggle them), a genuine bulleted list for `{{scope}}`, and
-  the "Schedule 3 - Schedule of Inspections" table, whose row set/order
-  is driven entirely by the Inspection Schedule step (including
-  unlimited free-text "Other" rows, cloned from the template's own
-  "Other" row as a prototype).
-- **`LBP form.docx`** — text placeholders for street/suburb/town/client
-  info/date, plus two tables driven entirely by real Word checkbox
-  content controls: one row per Scope item ("restricted building work"),
-  and a YES/NO pair for "Waivers and Modifications".
-- **`Calculation Statement.docx`** — no placeholders or tables, copied
-  through unchanged.
-- **`Specifications.docx`** — 7 top-level sections (each a `"Title 1"`
-  -styled heading); the user picks which apply on the Specification
-  step, and `word_filler._remove_unselected_sections` deletes the rest
-  (heading, body, tables) before any token replacement runs. A few
-  sections also gate numeric MPa/kPa placeholders, including a
-  dropdown-selected grout strength (value + unit + zone chosen as one
-  string, not typed).
-- **`B2 Letter.docx`** — text placeholders for job number/date/council/
-  street/suburb/town, plus a Material/Means of Compliance/Notes table
-  where the user picks which material rows (Reinforced concrete /
-  Structural timber / Mild steel structure) survive via
-  `word_filler._remove_unselected_table_rows` - row content itself never
-  changes, only which rows are present.
+- **Project register.docx** - `{{job_number}}`, `{{address}}` (street only), `{{scope}}` (bulleted list).
+- **PS1 Producer Statement.docx** - text tokens, tagged Word checkbox content
+  controls, `{{scope}}` list, and the Schedule of Inspections table (rows
+  selected, reordered, and unlimited "Other" rows cloned from a prototype row).
+- **LBP form.docx** - per-Scope-item table (checkbox + bulleted description +
+  role + drawing reference) and the Waivers YES/NO section.
+- **Calculation Statement.docx** - copied unchanged.
+- **Specifications.docx** - 7 `"Title 1"` sections, unselected ones deleted;
+  numeric tokens; CONCRETE - GENERAL's strength lines are each optional
+  (unticked lines deleted via `remove_paragraphs_with_tokens`; the
+  Foundations line is built as `{{foundation_strengths}}`).
+- **B2 Letter.docx** - text tokens; material rows selected.
 
-`app/core/word_filler.py` fills these by copying the template,
-optionally deleting/reordering unselected sections/table rows first,
-then replacing `{{token}}` placeholders (splitting a run mid-token if
-needed, e.g. when a template was hand-typed in Word and autocomplete
-glued two tokens into one run), toggling tagged checkboxes, and splicing
-in genuine bulleted-list paragraphs and dynamically-cloned table rows —
-the rest of each document's formatting is left completely untouched.
+`word_filler.fill_docx_template` copies the template, does structural cuts
+first (sections, paragraphs, table rows, reorder, dynamic rows), then token
+replacement (splitting runs when a token straddles them), checkbox toggling,
+and bullet lists - leaving all other formatting untouched. It never
+overwrites an existing output file.
 
-## MinuteDock sync (`app/core/minutedock_client.py`, `app/core/web_filler.py`)
+## MinuteDock (`minutedock_client.py`, `web_filler.py`)
 
-Required - the token must be configured in Settings before the wizard
-lets you past it, so this always runs on Create. Authenticates as
-`Authorization: Bearer <token>`
-against `https://minutedock.com/api/v1`. `find_or_create_contact`/
-`find_or_create_project` are genuinely find-or-create (exact,
-case-insensitive name match, not substring) so re-running Create for the
-same job never creates duplicates. See `USER_GUIDE.md` for how to
-generate a token, and `HANDOFF.md`'s "Feature 3: MinuteDock sync" section
-for full implementation detail.
+API docs: https://developers.minutedock.com. Bearer token from Settings.
+Contacts are picked/added on General; a Project's Short Code is the job
+number (unique), Name is the street, billable is always true, rates always
+"Use contact rates" (no `default_rate_dollars` sent), optional budget is
+`budget_type="billable"`, `budget_frequency="total"`, numeric
+`budget_target`. Existing Projects are updated with `PUT /projects/{id}`
+(requires `name` + `contact_id`) - see HANDOFF.md for what's still
+unverified against the live API.
 
 ## Dev setup
 
@@ -140,26 +106,11 @@ pip install -r requirements.txt
 python main.py
 ```
 
+No automated test suite yet - see HANDOFF.md for how changes have been
+verified (headless `MainWindow` scripts) and the gotchas to follow.
+
 ## Packaging
 
-Builds a real Windows installer (`AutomaticProcess-Setup.exe`) via
-PyInstaller + Inno Setup — see [build_scripts/README.md](build_scripts/README.md)
-for the exact commands and one-time tool setup.
-
-## Progress
-
-- [x] Project skeleton
-- [x] Step 1: folder creation (Engineer/Drafting/Admin, fixed Engineer subfolders)
-- [x] Wizard GUI: Settings, General, PS1 Input, Inspection Schedule,
-      Waivers and Modifications, Specification, B2 Letter, MinuteDock,
-      Review & Create
-- [x] Word template filling: text placeholders, real checkboxes, genuine
-      bullet lists, section/table-row selection, dynamic table rows
-- [x] Reset-to-blank after a successful Create
-- [x] Consent Document template filling: PS1, LBP form, Calculation
-      Statement, Specifications, B2 Letter
-- [x] Step 3: MinuteDock sync (find-or-create Contact/Project)
-- [x] Package as a Windows installer (PyInstaller + Inno Setup)
-- [x] Non-blocking Create (background thread + progress dialog)
-- [x] Non-technical user guide
-- [ ] Automated tests
+`AutomaticProcess-Setup.exe` via PyInstaller + Inno Setup - see
+[build_scripts/README.md](build_scripts/README.md). User data lives in
+`%APPDATA%\AutomaticProcess` and is never touched by install/update/uninstall.

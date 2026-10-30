@@ -25,7 +25,7 @@ def sync_to_minutedock(
     project_name: str,
     project_short_code: str,
     billable: bool,
-    standard_rate_dollars: str | None,
+    budget_dollars: str | None,
 ) -> dict[str, Any]:
     """Find-or-create the MinuteDock Contact and Project for this job.
 
@@ -44,7 +44,30 @@ def sync_to_minutedock(
         name=project_name,
         short_code=project_short_code,
         billable=billable,
-        default_rate_dollars=standard_rate_dollars,
+        budget_dollars=budget_dollars,
     )
     logger.info("Synced to MinuteDock: contact %r, project %r", contact.get("name"), project.get("name"))
     return {"contact": contact, "project": project}
+
+
+def update_project_budget(
+    access_token: str,
+    *,
+    project_id: str,
+    project_name: str,
+    contact_id: Any,
+    budget_dollars: str | None,
+) -> dict[str, Any]:
+    """Save a changed budget back to an *existing* Project (the
+    "documents_only" Create mode, where the job's Project was already made
+    by an earlier "folder_only" run) instead of creating a new one.
+
+    `budget_dollars` None clears the budget. The Project's existing
+    `project_name` and `contact_id` are sent back unchanged because the API
+    requires both on every update.
+    """
+    fields = {"name": project_name, "contact_id": contact_id}
+    fields.update(minutedock_client.budget_fields(budget_dollars))
+    project = minutedock_client.update_project(access_token, project_id, fields)
+    logger.info("Updated MinuteDock project %s budget to %r", project_id, budget_dollars)
+    return project

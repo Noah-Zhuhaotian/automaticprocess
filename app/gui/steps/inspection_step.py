@@ -4,6 +4,11 @@ items apply, adds any number of free-text "Other" items, and orders
 everything; that order becomes the table's No. column (see word_filler's
 _reorder_table_rows/_insert_dynamic_table_rows and
 INSPECTION_ITEMS/INSPECTION_OTHER_LABEL in constants.py).
+
+Every Other item used in a Create is remembered in settings
+("inspection_other_items", like the council list): each Other row's "Item
+of inspection" box is a dropdown of those saved items - picking one fills
+in its Time frame too - but still accepts a brand-new item typed in.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from app.config.settings import save_settings
 from app.gui.constants import INSPECTION_ITEM_LABELS, INSPECTION_ITEMS
 
 
@@ -110,9 +116,18 @@ class InspectionStepMixin:
         row_frame = ttk.Frame(container)
         row_frame.pack(fill="x", pady=2)
         ttk.Label(row_frame, text="Item of inspection:").grid(row=0, column=0, sticky="w")
-        description_entry = ttk.Entry(row_frame, textvariable=entry_vars["description_var"], width=32)
+        # Editable Combobox: pick a previously-used Other item, or type a new one.
+        description_entry = ttk.Combobox(
+            row_frame,
+            textvariable=entry_vars["description_var"],
+            values=[item["description"] for item in self._saved_inspection_other_items()],
+            width=30,
+        )
         description_entry.grid(row=0, column=1, sticky="w", padx=(6, 0))
         description_entry.bind("<KeyRelease>", lambda event: self._refresh_inspection_order_listbox())
+        description_entry.bind(
+            "<<ComboboxSelected>>", lambda event: self._on_saved_inspection_other_selected(item_id)
+        )
         ttk.Label(row_frame, text="Time frame:").grid(row=0, column=2, sticky="w", padx=(12, 0))
         time_frame_entry = ttk.Entry(row_frame, textvariable=entry_vars["time_frame_var"], width=22)
         time_frame_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
@@ -120,6 +135,42 @@ class InspectionStepMixin:
             row=0, column=4, sticky="w", padx=(8, 0)
         )
         self._inspection_other_item_frames[item_id] = row_frame
+
+    def _saved_inspection_other_items(self) -> list[dict[str, str]]:
+        return self.settings.get("inspection_other_items", [])
+
+    def _on_saved_inspection_other_selected(self, item_id: str) -> None:
+        """Picking a saved item from the dropdown also fills its Time frame."""
+        entry_vars = self.inspection_other_items_by_id.get(item_id)
+        if entry_vars is None:
+            return
+        description = entry_vars["description_var"].get().strip().casefold()
+        for item in self._saved_inspection_other_items():
+            if item["description"].casefold() == description:
+                entry_vars["time_frame_var"].set(item["time_frame"])
+                break
+        self._refresh_inspection_order_listbox()
+
+    def _remember_inspection_other_items(self) -> None:
+        """Save this project's Other items for next time (called on Create).
+        Matched by description, case-insensitively: a new description is
+        added, an existing one gets its Time frame updated to the latest."""
+        saved = self.settings.setdefault("inspection_other_items", [])
+        changed = False
+        for entry_vars in self.inspection_other_items_by_id.values():
+            description = entry_vars["description_var"].get().strip()
+            time_frame = entry_vars["time_frame_var"].get().strip()
+            if not description:
+                continue
+            existing = next((i for i in saved if i["description"].casefold() == description.casefold()), None)
+            if existing is None:
+                saved.append({"description": description, "time_frame": time_frame})
+                changed = True
+            elif existing["time_frame"] != time_frame:
+                existing["time_frame"] = time_frame
+                changed = True
+        if changed:
+            save_settings(self.settings)
 
     def _add_inspection_other_item(self) -> None:
         self._inspection_other_counter += 1

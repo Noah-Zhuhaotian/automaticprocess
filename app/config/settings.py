@@ -25,6 +25,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "word_template": "",     # Step 2: Word template file path
     "minutedock_access_token": "",  # Step 3: MinuteDock Personal Access Token (required, set during Settings)
     "council_names": [],     # user-maintained list, e.g. for the PS1 Input step
+    # Inspection Schedule "Other" items used before, offered again in each
+    # Other row's dropdown: [{"description": ..., "time_frame": ...}, ...]
+    "inspection_other_items": [],
 }
 
 

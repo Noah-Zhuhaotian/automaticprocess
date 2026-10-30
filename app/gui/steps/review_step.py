@@ -1,13 +1,18 @@
 """Step: Review & Create - single Create button that builds the shared
 replacements dict and generates everything for the current project:
 project folders plus the Project register, PS1, LBP form, Calculation
-Statement, Specifications, and B2 Letter documents, then (if a MinuteDock
-Personal Access Token is configured in Settings) syncs the matching
-Contact/Project to MinuteDock.
+Statement, Specifications, and B2 Letter documents, then syncs the
+matching Contact/Project to MinuteDock. What actually runs depends on the
+Create-mode choice from mode_step.py ("folder_only" skips documents but
+still creates the MinuteDock Project; "documents_only" skips folder
+creation, fills into an already-existing folder, and reuses that job's
+existing MinuteDock Project instead of creating another; "both" is this
+full sequence).
 """
 
 from __future__ import annotations
 
+import datetime
 import queue
 import threading
 import tkinter as tk
@@ -15,9 +20,10 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any
 
-from app.core import folder_creator, web_filler, word_filler
+from app.core import folder_creator, project_store, web_filler, word_filler
 from app.core.minutedock_client import MinuteDockError
 from app.gui.constants import (
+    ALTERNATIVE_SOLUTION_TEXT,
     B1_OPTIONS,
     B2_LETTER_MATERIALS,
     B2_LETTER_TEMPLATE,
@@ -35,30 +41,142 @@ from app.gui.constants import (
     SPECIFICATION_TEMPLATE,
     UNCHECKED,
 )
+from app.gui.steps.template_step import NO_TEMPLATE
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+PREVIOUS_VERSIONS_FOLDER = "_previous versions"
+
+# Where each generated document lands, relative to the Engineer project
+# folder (used as the "output" paths in _on_create's documents list).
+DOCUMENT_OUTPUTS = [
+    Path("Project register.docx"),
+    Path("06 Consent Document") / "PS1 Producer Statement.docx",
+    Path("06 Consent Document") / "LBP form.docx",
+    Path("06 Consent Document") / "Calculation Statement.docx",
+    Path("06 Consent Document") / "Specifications.docx",
+    Path("06 Consent Document") / "B2 Letter.docx",
+]
+
+
+def _archive_existing_documents(engineer_folder: Path, outputs: list[Path]) -> Path | None:
+    """Before regenerating an opened project's documents, move any of them
+    that already exist into "_previous versions/<timestamp>/" (keeping their
+    relative paths), since word_filler never overwrites. Returns that folder,
+    or None if there was nothing to move. All-or-nothing: if one can't be
+    moved (e.g. open in Word), the ones already moved are put back and the
+    OSError is re-raised, so the project is never left half-archived."""
+    existing = [relative for relative in outputs if (engineer_folder / relative).exists()]
+    if not existing:
+        return None
+
+    archive = engineer_folder / PREVIOUS_VERSIONS_FOLDER / datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+    moved: list[Path] = []
+    try:
+        for relative in existing:
+            target = archive / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            (engineer_folder / relative).rename(target)
+            moved.append(relative)
+    except OSError:
+        for relative in moved:
+            (archive / relative).rename(engineer_folder / relative)
+        raise
+    logger.info("Moved %d previous document(s) to %s", len(moved), archive)
+    return archive
 
 
 class ReviewStepMixin:
     # ---------- Step: Review & Create ----------
     def _build_review_step(self, parent: ttk.Frame) -> None:
-        ttk.Label(
-            parent,
-            text=(
-                "Click Create to generate everything for this project: folders on "
-                "the Engineer/Drafting/Admin drives, the Project register, PS1, "
-                "LBP form, Calculation Statement, Specifications, and B2 Letter "
-                "documents, and the matching MinuteDock Contact/Project."
-            ),
-            wraplength=560,
-            justify="left",
-        ).grid(row=0, column=0, sticky="w")
+        mode = self.create_mode_var.get()
+        documents = (
+            "the Project register, PS1, LBP form, Calculation Statement, Specifications, and B2 Letter documents"
+        )
+        if mode == "folder_only":
+            text = (
+                "Click Create to make the project folders on the Engineer/Drafting/Admin drives "
+                "and the job's MinuteDock project (plus the client's Contact, if it's new). "
+                "No documents are generated."
+            )
+        elif mode == "documents_only":
+            if self.existing_minutedock_project is not None:
+                minutedock = (
+                    "No new MinuteDock project is created - this job's existing one gets its "
+                    "budget updated only if you changed it."
+                )
+            else:
+                minutedock = "This job has no MinuteDock project yet, so one is created."
+            folder = self.existing_project_folder_var.get().strip()
+            engineer = Path(self.settings.get("engineer_drive", "")) / folder
+            has_documents = any((engineer / doc).exists() for doc in DOCUMENT_OUTPUTS)
+            regenerate = (
+                f' Its current documents will be moved to "{PREVIOUS_VERSIONS_FOLDER}" first (nothing is deleted).'
+                if has_documents
+                else ""
+            )
+            text = f'Click Create to generate {documents} into the existing folder "{folder}".{regenerate} {minutedock}'
+        elif mode == "batch":
+            count = len(self._batch_values())
+            text = (
+                f"Click Create all to create {count} job(s) from the template \"{self._applied_template}\" - "
+                f"for each: folders on the Engineer/Drafting/Admin drives, {documents}, and its MinuteDock "
+                "project. A job that fails doesn't stop the others; the results are listed at the end."
+            )
+        elif mode == "edit_template":
+            text = (
+                f'Click Save template to save these settings back to the template "{self.editing_template_name}". '
+                "Nothing is created."
+            )
+        else:
+            text = (
+                "Click Create to generate everything for this project: folders on the "
+                f"Engineer/Drafting/Admin drives, {documents}, and the matching MinuteDock "
+                "Contact/Project."
+            )
+        # A dedicated frame so the row/column weights below (letting the
+        # summary fill the window) don't leak into other steps, which reuse
+        # the same content_frame with their own layout.
+        frame = ttk.Frame(parent)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(1, weight=1)
+
+        ttk.Label(frame, text=text, wraplength=700, justify="left").grid(row=0, column=0, columnspan=2, sticky="w")
+        self._build_review_summary_view(frame, row=1)
+
+        if mode in ("both", "documents_only"):
+            ttk.Button(frame, text="Save these settings as a template...", command=self._save_as_template).grid(
+                row=2, column=0, sticky="w", pady=(8, 0)
+            )
 
         self.create_result_var = tk.StringVar()
-        ttk.Label(parent, textvariable=self.create_result_var, wraplength=560, justify="left").grid(
-            row=1, column=0, sticky="w", pady=(12, 0)
+        ttk.Label(frame, textvariable=self.create_result_var, wraplength=700, justify="left").grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(8, 0)
         )
+
+    def _build_review_summary_view(self, frame: ttk.Frame, row: int) -> None:
+        """Everything entered so far, grouped by step, in a scrollable
+        read-only text box - use < Back to change anything."""
+        text = tk.Text(frame, wrap="word", height=18, relief="solid", borderwidth=1, padx=8, pady=6)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        text.grid(row=row, column=0, sticky="nsew", pady=(10, 0))
+        scrollbar.grid(row=row, column=1, sticky="ns", pady=(10, 0))
+
+        text.tag_configure("heading", font=("Segoe UI", 10, "bold"), spacing1=12, spacing3=2)
+        text.tag_configure("label", font=("Segoe UI", 9, "bold"), lmargin1=12)
+        text.tag_configure("value", font=("Segoe UI", 9), lmargin1=12, lmargin2=12)
+
+        for heading, rows in self._build_review_summary():
+            text.insert("end", heading + "\n", "heading")
+            for label, value in rows:
+                text.insert("end", f"{label}: ", "label")
+                if "\n" in value:
+                    value = "\n" + "\n".join(f"    {line}" for line in value.split("\n"))
+                text.insert("end", value + "\n", "value")
+        text.configure(state="disabled")
 
     def _build_scope_lines(self) -> list[str]:
         # Plain text, no manual "- " prefix: the bullet glyph comes from a
@@ -172,7 +290,7 @@ class ReviewStepMixin:
             "compliance_box": CHECKED if compliance_selected else UNCHECKED,
             "alternative_box": CHECKED if alternative_selected else UNCHECKED,
             "compliance_solution": "; ".join(b1_selected) if compliance_selected else "",
-            "alternative_solution": self.alternative_solution_text.strip() if alternative_selected else "N/A",
+            "alternative_solution": ALTERNATIVE_SOLUTION_TEXT if alternative_selected else "N/A",
             "date": self._format_selected_date(),
         }
         for item in CM_ITEMS:
@@ -214,10 +332,10 @@ class ReviewStepMixin:
         # deletes those paragraphs before replacement runs, so an empty
         # value here never actually reaches the output document.
         replacements["capacity"] = self.capacity_var.get().strip()
-        replacements["precast_strength"] = self.precast_strength_var.get().strip()
-        replacements["foundation_plain_strength"] = self.foundation_plain_strength_var.get().strip()
-        replacements["foundation_fibre_strength"] = self.foundation_fibre_strength_var.get().strip()
-        replacements["metal_deck_topping_strength"] = self.metal_deck_topping_strength_var.get().strip()
+        # CONCRETE - GENERAL's strengths: only ticked ones get a value; the
+        # lines of unticked ones are deleted (see _on_create's
+        # remove_paragraphs_with_tokens), so they never need one.
+        replacements.update(self._specification_strength_paragraphs()[0])
         replacements["grout_strength"] = self.grout_strength_var.get().strip()
 
         return replacements
@@ -225,11 +343,32 @@ class ReviewStepMixin:
     def _on_create(self) -> None:
         """Gathers everything the worker needs from tkinter variables (must
         happen here, on the main thread - tkinter itself isn't thread-safe)
-        into a plain-data `job` dict, then hands the actual folder/document/
+        into plain-data `job` dicts, then hands the actual folder/document/
         MinuteDock work to a background thread so the window stays
         responsive instead of freezing for the whole operation. See
-        _run_create_job/_on_create_done for the rest of the flow.
+        _run_create_job/_run_batch_jobs/_on_create_done for the rest.
         """
+        mode = self.create_mode_var.get()
+        if mode == "edit_template":
+            self._save_edited_template()
+            return
+        if mode != "folder_only":
+            self._remember_inspection_other_items()
+
+        self._create_result_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+        if mode == "batch":
+            jobs = self._build_batch_jobs()
+            self._set_busy(True)
+            threading.Thread(target=self._run_batch_jobs, args=(jobs,), daemon=True).start()
+        else:
+            job = self._build_job()
+            self._set_busy(True)
+            threading.Thread(target=self._run_create_job, args=(job,), daemon=True).start()
+        self.after(100, self._poll_create_result)
+
+    def _build_job(self) -> dict[str, Any]:
+        """One job's plain-data description, from the wizard's current tk
+        variables (main thread only)."""
         replacements = self._build_replacements()
         bullet_lists = {"scope": self._build_scope_lines()}
         bullet_lists.update(self._build_lbp_description_bullets())
@@ -245,10 +384,10 @@ class ReviewStepMixin:
         # every other document; .get() with a default reads far better
         # than a growing all-None tuple per document.
         documents = [
-            {"template": PROJECT_REGISTER_TEMPLATE, "output": Path("Project register.docx")},
+            {"template": PROJECT_REGISTER_TEMPLATE, "output": DOCUMENT_OUTPUTS[0]},
             {
                 "template": PS1_TEMPLATE,
-                "output": Path("06 Consent Document") / "PS1 Producer Statement.docx",
+                "output": DOCUMENT_OUTPUTS[1],
                 "keep_table_rows": {PS1_INSPECTION_TABLE_INDEX: fixed_keep_labels},
                 "keep_table_row_label_columns": {PS1_INSPECTION_TABLE_INDEX: 1},
                 "table_row_order": {PS1_INSPECTION_TABLE_INDEX: fixed_row_order},
@@ -256,19 +395,20 @@ class ReviewStepMixin:
                 "dynamic_table_row_order": {PS1_INSPECTION_TABLE_INDEX: dynamic_order},
                 "dynamic_table_row_values": {PS1_INSPECTION_TABLE_INDEX: dynamic_values},
             },
-            {"template": LBP_TEMPLATE, "output": Path("06 Consent Document") / "LBP form.docx"},
+            {"template": LBP_TEMPLATE, "output": DOCUMENT_OUTPUTS[2]},
             {
                 "template": CALCULATION_STATEMENT_TEMPLATE,
-                "output": Path("06 Consent Document") / "Calculation Statement.docx",
+                "output": DOCUMENT_OUTPUTS[3],
             },
             {
                 "template": SPECIFICATION_TEMPLATE,
-                "output": Path("06 Consent Document") / "Specifications.docx",
+                "output": DOCUMENT_OUTPUTS[4],
                 "keep_sections": specification_sections,
+                "remove_paragraphs_with_tokens": self._specification_strength_paragraphs()[1],
             },
             {
                 "template": B2_LETTER_TEMPLATE,
-                "output": Path("06 Consent Document") / "B2 Letter.docx",
+                "output": DOCUMENT_OUTPUTS[5],
                 "keep_table_rows": {0: b2_letter_materials},
             },
         ]
@@ -286,14 +426,12 @@ class ReviewStepMixin:
             # Always billable - see minutedock_step.py for why this isn't a
             # user-facing toggle.
             "billable": True,
-            "standard_rate_dollars": (
-                self.minutedock_standard_rate_var.get().strip()
-                if self.minutedock_rate_mode_var.get() == "standard"
-                else None
-            ),
+            # No rate is sent - projects always "Use contact rates".
+            "budget_dollars": self._minutedock_budget_dollars(),
         }
 
         job = {
+            "mode": self.create_mode_var.get(),
             "job_number": self.job_number_var.get(),
             "street": self.street_var.get(),
             "engineer_drive": self.settings.get("engineer_drive", ""),
@@ -303,12 +441,33 @@ class ReviewStepMixin:
             "bullet_lists": bullet_lists,
             "documents": documents,
             "minutedock": minutedock_args,
+            "existing_minutedock_project": self.existing_minutedock_project,
+            "minutedock_budget_changed": self._minutedock_budget_changed(minutedock_args["budget_dollars"]),
         }
+        return job
 
-        self._set_busy(True)
-        self._create_result_queue: queue.Queue[dict[str, Any]] = queue.Queue()
-        threading.Thread(target=self._run_create_job, args=(job,), daemon=True).start()
-        self.after(100, self._poll_create_result)
+    def _minutedock_budget_changed(self, budget_dollars: str | None) -> bool:
+        """Whether the MinuteDock step's budget differs from the existing
+        Project's (documents_only), compared as money ("500" == "500.00").
+        A budget kind this app doesn't set (e.g. hours, set in MinuteDock's
+        web UI) counts as unchanged while "Set a budget" stays unticked, so
+        it's left alone; ticking it replaces that budget. Always False with
+        no existing Project."""
+        existing = self.existing_minutedock_project
+        if existing is None:
+            return False
+        if budget_dollars is None and existing.get("other_budget"):
+            return False
+
+        def normalize(value: str | None) -> str | None:
+            if value is None or not str(value).strip():
+                return None
+            try:
+                return f"{float(value):.2f}"
+            except ValueError:
+                return str(value).strip()
+
+        return normalize(budget_dollars) != normalize(existing["budget"])
 
     def _poll_create_result(self) -> None:
         """Runs entirely on the main thread (self.after only ever
@@ -324,36 +483,94 @@ class ReviewStepMixin:
         except queue.Empty:
             self.after(100, self._poll_create_result)
             return
+        if outcome["kind"] == "progress":
+            self._set_progress_text(outcome["text"])
+            self.after(100, self._poll_create_result)
+            return
         self._on_create_done(outcome)
 
     def _run_create_job(self, job: dict[str, Any]) -> None:
+        """Worker thread for a single job: run it and hand its outcome to
+        the main thread (see _poll_create_result)."""
+        self._create_result_queue.put(self._execute_job(job))
+
+    def _execute_job(self, job: dict[str, Any]) -> dict[str, Any]:
         """Runs off the main thread - must never touch tkinter widgets,
         variables, or any tkinter method (including self.after - see
-        _poll_create_result) directly; only self._create_result_queue.put()
-        is safe to call from here. folder_creator/word_filler/web_filler are
+        _poll_create_result) directly; it only returns the job's outcome
+        dict ({"kind": "success" | "partial" | "cannot_create" | "error",
+        ...}), which the caller queues. folder_creator/word_filler/web_filler are
         plain file-IO/network functions with no tkinter dependency, so
         they're safe to run here unlike the code that gathered `job`.
-        """
-        try:
-            created = folder_creator.create_project_folders(
-                job_number=job["job_number"],
-                street=job["street"],
-                engineer_drive=job["engineer_drive"],
-                drafting_drive=job["drafting_drive"],
-                admin_drive=job["admin_drive"],
-            )
-        except (ValueError, FileExistsError) as exc:
-            logger.warning("Cannot create project folders: %s", exc)
-            self._create_result_queue.put({"kind": "cannot_create", "message": str(exc)})
-            return
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Failed to create project folders")
-            self._create_result_queue.put({"kind": "error", "message": str(exc)})
-            return
 
-        summary = "\n".join(f"{name}: {path}" for name, path in created.items())
+        job["mode"] (see mode_step.py) branches this into three shapes:
+        "documents_only" skips folder creation (the folder must already
+        exist - create_project_folders would raise on it); "folder_only"
+        creates folders then returns immediately, skipping documents and
+        MinuteDock; "both" (the default/original behavior) does all three
+        stages, unchanged.
+        """
+        mode = job["mode"]
+
+        if mode == "documents_only":
+            # The folder was picked on the Create-mode step precisely
+            # because it already exists - create_project_folders() would
+            # raise FileExistsError on it, so build the path directly
+            # instead of calling it.
+            project_name = folder_creator.build_project_folder_name(job["job_number"], job["street"])
+            engineer_path = Path(job["engineer_drive"]) / project_name
+            if not engineer_path.is_dir():
+                message = f"The selected project folder no longer exists:\n{engineer_path}"
+                logger.warning("Cannot fill documents: %s", message)
+                return {"kind": "cannot_create", "message": message}
+            created = {"engineer": engineer_path}
+            summary = f"Using existing folder: {engineer_path}"
+        else:
+            try:
+                created = folder_creator.create_project_folders(
+                    job_number=job["job_number"],
+                    street=job["street"],
+                    engineer_drive=job["engineer_drive"],
+                    drafting_drive=job["drafting_drive"],
+                    admin_drive=job["admin_drive"],
+                )
+            except (ValueError, FileExistsError) as exc:
+                logger.warning("Cannot create project folders: %s", exc)
+                return {"kind": "cannot_create", "message": str(exc)}
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Failed to create project folders")
+                return {"kind": "error", "message": str(exc)}
+            summary = "\n".join(f"{name}: {path}" for name, path in created.items())
+
+        if mode != "folder_only":
+            summary, failure = self._fill_documents(job, created, summary)
+            if failure is not None:
+                return failure
+
+        return self._sync_job_to_minutedock(job, summary)
+
+    def _fill_documents(
+        self, job: dict[str, Any], created: dict[str, Path], summary: str
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Worker-thread stage: fill every Word template into the Engineer
+        folder. Returns (extended summary, None), or (summary, failure
+        outcome) if the documents couldn't all be made."""
         replacements = job["replacements"]
         bullet_lists = job["bullet_lists"]
+
+        try:
+            archive = _archive_existing_documents(created["engineer"], [doc["output"] for doc in job["documents"]])
+        except OSError as exc:
+            logger.exception("Failed to move previous documents aside")
+            return summary, (
+                {
+                    "kind": "error",
+                    "message": f"Couldn't move the existing documents aside before regenerating them:\n{exc}\n\n"
+                    "Is one of them open in Word? Close it and try again.",
+                }
+            )
+        if archive is not None:
+            summary += f"\nPrevious documents moved to: {archive}"
 
         for doc in job["documents"]:
             template_path = doc["template"]
@@ -374,37 +591,62 @@ class ReviewStepMixin:
                     dynamic_table_row_templates=doc.get("dynamic_table_row_templates"),
                     dynamic_table_row_order=doc.get("dynamic_table_row_order"),
                     dynamic_table_row_values=doc.get("dynamic_table_row_values"),
+                    remove_paragraphs_with_tokens=doc.get("remove_paragraphs_with_tokens"),
                 )
                 summary += f"\n{relative_output}: {output_path}"
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Failed to fill template %s", template_path)
-                self._create_result_queue.put(
-                    {
-                        "kind": "partial",
-                        "summary": summary,
-                        "message": f"Some items were created, but {relative_output} failed:\n{exc}",
-                    }
-                )
-                return
-
-        try:
-            result = web_filler.sync_to_minutedock(**job["minutedock"])
-            summary += (
-                f"\nMinuteDock: contact '{result['contact']['name']}', "
-                f"project '{result['project']['name']}'"
-            )
-        except MinuteDockError as exc:
-            logger.exception("Failed to sync to MinuteDock")
-            self._create_result_queue.put(
-                {
+                return summary, {
                     "kind": "partial",
                     "summary": summary,
-                    "message": f"Folders and documents were created, but MinuteDock sync failed:\n{exc}",
+                    "message": f"Some items were created, but {relative_output} failed:\n{exc}",
                 }
-            )
-            return
+        return summary, None
 
-        self._create_result_queue.put({"kind": "success", "summary": summary})
+    def _sync_job_to_minutedock(self, job: dict[str, Any], summary: str) -> dict[str, Any]:
+        """Worker-thread final stage, returning the job's outcome:
+        - documents_only with the job's Project already in MinuteDock: no
+          new Project - save the budget back only if it changed.
+        - otherwise (folder_only, both, or documents_only with no Project
+          yet): find-or-create the Contact (a newly-added client name gets
+          created here) and the Project.
+        """
+        existing = job["existing_minutedock_project"]
+        done_label = "Documents were created" if job["mode"] == "documents_only" else (
+            "Folders were created" if job["mode"] == "folder_only" else "Folders and documents were created"
+        )
+        try:
+            if existing is not None:
+                if job["minutedock_budget_changed"]:
+                    budget = job["minutedock"]["budget_dollars"]
+                    web_filler.update_project_budget(
+                        job["minutedock"]["access_token"],
+                        project_id=existing["id"],
+                        project_name=existing["name"],
+                        contact_id=existing["contact_id"],
+                        budget_dollars=budget,
+                    )
+                    summary += (
+                        f"\nMinuteDock: existing project {job['job_number']} budget "
+                        + (f"set to ${budget} in total" if budget else "removed")
+                    )
+                else:
+                    summary += f"\nMinuteDock: existing project {job['job_number']} unchanged"
+            else:
+                result = web_filler.sync_to_minutedock(**job["minutedock"])
+                summary += (
+                    f"\nMinuteDock: contact '{result['contact']['name']}', "
+                    f"project '{result['project']['name']}'"
+                )
+        except MinuteDockError as exc:
+            logger.exception("Failed to sync to MinuteDock")
+            return {
+                "kind": "partial",
+                "summary": summary,
+                "message": f"{done_label}, but MinuteDock sync failed:\n{exc}",
+            }
+
+        return {"kind": "success", "summary": summary}
 
     def _on_create_done(self, outcome: dict[str, Any]) -> None:
         """Runs back on the main thread (scheduled via self.after from
@@ -413,12 +655,19 @@ class ReviewStepMixin:
         self._set_busy(False)
         kind = outcome["kind"]
 
+        if kind == "batch":
+            self._on_batch_done(outcome["results"])
+            return
         if kind == "cannot_create":
             messagebox.showerror("Cannot create", outcome["message"])
             return
         if kind == "error":
             messagebox.showerror("Error", outcome["message"])
             return
+        # The project's folder exists from here on (success or partial), so
+        # remember everything entered for it - it can be opened again later.
+        self._save_project_data()
+
         if kind == "partial":
             self.create_result_var.set(f"Created:\n{outcome['summary']}")
             messagebox.showwarning("Partial success", outcome["message"])
@@ -428,6 +677,20 @@ class ReviewStepMixin:
         self._update_availability_status()
         self._show_success_dialog("Done", "Project created successfully.")
         self._reset_for_new_project()
+
+    def _save_project_data(self) -> None:
+        """Save this project's wizard input (app/core/project_store.py). A
+        failure here is logged and shown, but never undoes or blocks the
+        Create itself - the folders/documents already exist either way."""
+        try:
+            project_store.save_project(self.job_number_var.get().strip(), self._collect_project_data())
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Failed to save project data")
+            messagebox.showwarning(
+                "Couldn't save project data",
+                "The project was created, but its input couldn't be saved for opening again later:\n"
+                f"{exc}",
+            )
 
     def _set_busy(self, busy: bool) -> None:
         self.next_button.configure(state="disabled" if busy else "normal")
@@ -446,7 +709,8 @@ class ReviewStepMixin:
 
         frame = ttk.Frame(dialog, padding=24)
         frame.pack(fill="both", expand=True)
-        ttk.Label(frame, text="Creating project, please wait...").pack(pady=(0, 12))
+        self._progress_text_var = tk.StringVar(value="Creating project, please wait...")
+        ttk.Label(frame, textvariable=self._progress_text_var).pack(pady=(0, 12))
         progress = ttk.Progressbar(frame, mode="indeterminate", length=260)
         progress.pack()
         progress.start(12)
@@ -458,6 +722,11 @@ class ReviewStepMixin:
 
         dialog.grab_set()
         self._progress_dialog = dialog
+
+    def _set_progress_text(self, text: str) -> None:
+        var = getattr(self, "_progress_text_var", None)
+        if var is not None:
+            var.set(text)
 
     def _hide_progress_dialog(self) -> None:
         dialog = getattr(self, "_progress_dialog", None)
@@ -502,70 +771,38 @@ class ReviewStepMixin:
             messagebox.showinfo(title, message)
 
     def _reset_for_new_project(self) -> None:
-        """Clear all per-project input and jump back to General, ready for
-        the next project. Drive paths and the saved council list are app
+        """Clear all per-project input and jump back to Create mode, ready
+        for the next project. Drive paths and the saved council list are app
         configuration, not project data, so they're left untouched.
         """
-        self.job_number_var.set("")
-        self.client_info_var.set("")
-        self.street_var.set("")
-        self.suburb_var.set("")
-        self.town_var.set("")
-        self.role_var.set("")
-        for item in SCOPE_ITEMS:
-            self.scope_vars[item]["selected"].set(False)
-            self.scope_vars[item]["description"] = ""
-        self.availability_var.set("")
+        self._clear_project_fields()
 
-        self.council_name_var.set("")
-        self.description_of_work_text = ""
-        self.legal_description_text = ""
-        self.site_verification_text = ""
-        self.all_part_var.set("")
-        for item in CM_ITEMS:
-            self.cm_vars[item].set(False)
-        self.compliance_var.set(False)
-        self.alternative_var.set(False)
-        for option in B1_OPTIONS:
-            self.b1_vars[option].set(False)
-        self.alternative_solution_text = ""
-        self.date_year_var.set("")
-        self.date_month_var.set("")
-        self.date_day_var.set("")
-
-        for key in self.inspection_vars:
-            self.inspection_vars[key].set(False)
-        self.inspection_other_items_by_id = {}
-        self._inspection_other_counter = 0
-        self._inspection_other_item_frames = {}
-        self.inspection_order = []
-
-        self.waivers_required_var.set("")
-        self.building_code_clause_var.set("")
-        self.waiver_modification_text = ""
-
-        for title in SPECIFICATION_SECTIONS:
-            self.specification_vars[title].set(False)
-        self.capacity_var.set("")
-        self.precast_strength_var.set("")
-        self.foundation_plain_strength_var.set("")
-        self.foundation_fibre_strength_var.set("")
-        self.metal_deck_topping_strength_var.set("")
-        self.grout_strength_var.set("")
-
-        for material in B2_LETTER_MATERIALS:
-            self.b2_letter_material_vars[material].set(False)
-
-        self.minutedock_rate_mode_var.set("contact")
-        self.minutedock_standard_rate_var.set("")
+        # Create mode is itself per-project data - back to the default
+        # ("both") so the next project starts from the same choice everyone
+        # else sees, rather than silently inheriting whatever this one used.
+        self.create_mode_var.set("both")
+        self.existing_project_folder_var.set("")
+        self.existing_minutedock_project = None
+        self._loaded_project_folder = None
+        self.template_choice_var.set(NO_TEMPLATE)
+        self._applied_template = None
+        self.editing_template_name = None
+        self.batch_rows = []
+        # A client added this run now exists in MinuteDock - re-fetch the
+        # Contact list next time General is shown so it appears there.
+        self._new_contact_names = []
+        self._minutedock_contact_names = None
+        self.contact_status_var.set("")
 
         # Rebuild the step list: if this was the first run, Settings just
         # got filled in and saved during this very session, but self.steps
         # was only computed once at startup and still includes it. Without
-        # this, General would keep showing as "2 of 9" (with Settings) for
-        # the rest of the session instead of "1 of 8" like a fresh restart
-        # (where _settings_configured() is already true) would show.
+        # this, "Create mode" would keep showing as "2 of 10" (with
+        # Settings) for the rest of the session instead of "1 of 9" like a
+        # fresh restart (where _settings_configured() is already true)
+        # would show. The create_mode_var reset above must happen first,
+        # since _build_step_list() reads it.
         self.steps = self._build_step_list()
-        general_index = next(i for i, s in enumerate(self.steps) if s["title"] == "General")
-        self.current_step = general_index
-        self._show_step(general_index)
+        mode_index = next(i for i, s in enumerate(self.steps) if s["title"] == "Create mode")
+        self.current_step = mode_index
+        self._show_step(mode_index)

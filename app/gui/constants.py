@@ -15,7 +15,12 @@ ROLE_OPTIONS = ["Carried out", "Supervised"]
 ALL_PART_OPTIONS = ["All", "Part only"]
 YES_NO_OPTIONS = ["Yes", "No"]
 CM_ITEMS = ["CM1", "CM2", "CM3", "CM4", "CM5"]
-B1_OPTIONS = ["B1/VM1", "B1/MV4", "B1/AS1"]
+B1_OPTIONS = ["B1/VM1", "B1/VM2", "B1/AS1"]
+# PS1's "Alternative solution" is always this fixed text when Alternative is
+# ticked - not free-text input (and "N/A" when it isn't).
+ALTERNATIVE_SOLUTION_TEXT = (
+    "Repairing and rebuilding houses affected by the Canterbury Earthquake December 2012."
+)
 MONTH_NAMES = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December",
@@ -48,6 +53,7 @@ SPECIFICATION_NUMERIC_FIELDS: dict[str, list[tuple[str, str]]] = {
         ("foundation_plain_strength_var", "Foundations - Plain Concrete (MPa):"),
         ("foundation_fibre_strength_var", "Foundations - Fibre Concrete (MPa):"),
         ("metal_deck_topping_strength_var", "Metal deck topping (MPa):"),
+        ("concrete_other_strength_var", "Others (MPa):"),
     ],
     "MASONRY BLOCKWORK": [
         ("grout_strength_var", "Grout strength:"),
@@ -62,6 +68,20 @@ SPECIFICATION_NUMERIC_FIELDS: dict[str, list[tuple[str, str]]] = {
 # out its own unit + zone). Keyed by StringVar attribute name so
 # specification_step.py can tell which numeric fields need a Combobox
 # instead of a plain Entry.
+# Numeric fields that each have their own tickbox: only ticked ones are
+# filled and kept in Specifications.docx - an unticked one's whole line is
+# deleted (word_filler.remove_paragraphs_with_tokens). These are CONCRETE -
+# GENERAL's 28-day strengths; a selected section needs at least one ticked.
+# Plain and Fibre foundations share one line ("Foundations: ..."), built in
+# review_step.py from whichever of the two are ticked.
+SPECIFICATION_TICKABLE_FIELDS = (
+    "precast_strength_var",
+    "foundation_plain_strength_var",
+    "foundation_fibre_strength_var",
+    "metal_deck_topping_strength_var",
+    "concrete_other_strength_var",
+)
+
 SPECIFICATION_DROPDOWN_FIELDS: dict[str, list[str]] = {
     "grout_strength_var": ["17.5 MPa (Zone B)", "20 MPa (Zone C)", "25 MPa (Zone D)"],
 }

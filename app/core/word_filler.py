@@ -415,6 +415,18 @@ def _remove_unselected_sections(document: Document, keep_titles: set[str]) -> No
             child.getparent().remove(child)
 
 
+def _remove_paragraphs_with_tokens(document: Document, tokens: set[str]) -> None:
+    """Delete every body paragraph containing any of these {{token}}s -
+    for optional single-line entries (e.g. Specifications' concrete
+    strengths, each with its own tickbox) whose whole line should vanish
+    when not selected, rather than be left behind with a blank value."""
+    markers = [f"{{{{{token}}}}}" for token in tokens]
+    for paragraph in list(document.paragraphs):
+        if any(marker in paragraph.text for marker in markers):
+            element = paragraph._p
+            element.getparent().remove(element)
+
+
 def _remove_unselected_table_rows(
     document: Document,
     table_index: int,
@@ -590,6 +602,7 @@ def fill_docx_template(
     dynamic_table_row_templates: dict[int, str] | None = None,
     dynamic_table_row_order: dict[int, list[str]] | None = None,
     dynamic_table_row_values: dict[int, dict[str, list[str]]] | None = None,
+    remove_paragraphs_with_tokens: set[str] | None = None,
 ) -> Path:
     """Copy template_path to output_path and replace {{placeholder}} tokens.
 
@@ -624,6 +637,9 @@ def fill_docx_template(
     keys) and dynamic_table_row_values (those new keys' per-column values)
     drive building the final row sequence, inserting a fresh clone with
     directly-set cell text - no {{token}}s - wherever a new key appears.
+    remove_paragraphs_with_tokens, if given, deletes every body paragraph
+    containing one of those {{token}}s (see _remove_paragraphs_with_tokens),
+    also before replacement.
     Raises FileNotFoundError if the template is missing, and
     FileExistsError if output_path already exists (never overwrites).
     """
@@ -643,6 +659,9 @@ def fill_docx_template(
 
     if keep_sections is not None:
         _remove_unselected_sections(document, keep_sections)
+
+    if remove_paragraphs_with_tokens:
+        _remove_paragraphs_with_tokens(document, remove_paragraphs_with_tokens)
 
     # Capture+remove each dynamic table's cloning-prototype row before any
     # other row surgery runs, so keep_table_rows/table_row_order below
