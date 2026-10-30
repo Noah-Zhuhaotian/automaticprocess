@@ -267,19 +267,17 @@ that matter (each one was learned from a real failure):
 5. The user's D: drive still has old test project folders with duplicate
    job numbers (e.g. 1232 ×3, 343 ×2, made before uniqueness existed); they
    now block those numbers. User decides whether to clean up.
-6. `resources/templates/Engsolution_Post_Interactive_QA_and_SiD_Simple.xlsx`
-   appeared (not ours, untracked) - ask the user before committing it.
-7. Saved projects/templates are single-PC; a shared location (a Settings
+6. Saved projects/templates are single-PC; a shared location (a Settings
    path on the NAS) was discussed as a later step if the user needs it.
-8. No automated tests - the scripts described in section 7 would be a good
+7. No automated tests - the scripts described in section 7 would be a good
    base for a pytest suite.
-9. Ideas mentioned but not requested: managing saved Inspection "Other"
+8. Ideas mentioned but not requested: managing saved Inspection "Other"
    items (rename/delete); a "description" text for the concrete "Others"
    strength line.
 
 ## 9. Recent history (newest first)
 
-Uncommitted at the time of writing (now one commit): Create modes;
+`7ec22ed` (one large commit): Create modes;
 MinuteDock Contact picker; job-number uniqueness (folders + MinuteDock,
 incl. archived); Scope step; PS1 B1/VM2 + fixed Alternative text;
 remembered Inspection Others; Specification strength tickboxes + Others;
