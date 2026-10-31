@@ -94,8 +94,8 @@ number (unique), Name is the street, billable is always true, rates always
 "Use contact rates" (no `default_rate_dollars` sent), optional budget is
 `budget_type="billable"`, `budget_frequency="total"`, numeric
 `budget_target`. Existing Projects are updated with `PUT /projects/{id}`
-(requires `name` + `contact_id`) - see HANDOFF.md for what's still
-unverified against the live API.
+(requires `name` + `contact_id`; budget update and null-clearing verified
+against the live account).
 
 ## Dev setup
 

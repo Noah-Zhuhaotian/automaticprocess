@@ -186,7 +186,8 @@ class MainWindow(
                 steps.extend(self._document_steps())
             steps.append(self._minutedock_step())
 
-        steps.append({"title": "Review & Create", "build": self._build_review_step, "validate": None})
+        review_title = "Review & Update" if mode == "documents_only" and self.is_update_run else "Review & Create"
+        steps.append({"title": review_title, "build": self._build_review_step, "validate": None})
         return steps
 
     def _document_steps(self) -> list[dict[str, Any]]:
@@ -233,6 +234,8 @@ class MainWindow(
         self.back_button.configure(state="normal" if index > 0 else "disabled")
         if index == len(self.steps) - 1:
             final = {"edit_template": "Save template", "batch": "Create all"}.get(mode, "Create")
+            if mode == "documents_only" and self.is_update_run:
+                final = "Update"
             self.next_button.configure(text=final)
         else:
             self.next_button.configure(text="Next >")

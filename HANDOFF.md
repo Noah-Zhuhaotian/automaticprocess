@@ -34,9 +34,9 @@ duplicates) + MinuteDock Personal Access Token (required).
 | value | label | steps after Create mode | Create does |
 |---|---|---|---|
 | `folder_only` | Create project folders only | General, MinuteDock, Review | folders + MinuteDock Contact/Project |
-| `documents_only` | Open an existing project (fill or regenerate its documents) | General, Scope, PS1 Input, Inspection Schedule, Waivers and Modifications, Specification, B2 Letter, MinuteDock, Review | documents into the chosen existing folder; old documents moved to `_previous versions/<timestamp>/`; reuses the job's MinuteDock Project (budget written back only if changed) |
+| `documents_only` | Open an existing project (fill or regenerate its documents) | General, Scope, PS1 Input, Inspection Schedule, Waivers and Modifications, Specification, B2 Letter, MinuteDock, Review | documents into the chosen existing folder; old documents moved to `_previous versions/<timestamp>/`; reuses the job's MinuteDock Project (budget written back only if changed). If the project's documents were generated before (`saved["documents_generated"]`) it's an **update run** (`is_update_run`): "Review & Update", button "Update", and a "Changes" section | 
 | `both` (default) | Create folders and documents together (normal) | same as documents_only | folders + documents + MinuteDock |
-| `batch` | Create several jobs from a template | Jobs, Review | one `both` job per table row, all from a template; failures don't stop the batch |
+| `batch` | Create several jobs from a template | Jobs, Review | one `both` job per table row, all from a template; failures don't stop the batch. The Jobs step also has the PS1 date for all jobs (defaults to today) and "Add new client..." (new clients created in MinuteDock on Create) |
 | `edit_template` | (internal, from Manage templates) | Edit template, Scope … MinuteDock, Review & Save | saves the template; creates nothing |
 
 Other behaviour worth knowing:
@@ -63,7 +63,12 @@ Other behaviour worth knowing:
   budget" = $ Billable, in total, numbers only. Every Project billable=True.
 - **Review & Create**: full read-back summary of everything entered
   (`review_summary.py`), "Save these settings as a template..." button
-  (both/documents_only).
+  (both/documents_only). In an update run, `mode_step` snapshots the
+  summary rows (`_summary_values()`) right after the project is loaded;
+  Review then diffs against it (`_review_changes()`), prepends a "Changes"
+  section and marks changed rows with `UPDATED_SUFFIX` (rendered orange).
+  New creations (incl. first-time documents for a folder-only project)
+  keep "Create".
 - **Saved projects**: every successful/partial Create saves all wizard input
   to `%APPDATA%\AutomaticProcess\projects\<job>.json`; "Open an existing
   project" lists empty project folders + folders with a save, and reloads it.
@@ -199,7 +204,9 @@ nested under the resource name (`{"project": {...}}`).
   `budget_frequency` "total"|"weekly"|"monthly"|"quarterly"|"yearly",
   `budget_target` **number**. The app only sets billable/total.
 - `PUT /projects/{id}` requires `name` and `contact_id` in every update
-  (we resend the Project's own values).
+  (we resend the Project's own values). Verified by the user on the live
+  account: the nested body updates the budget, and null budget fields
+  clear it.
 - Real error bodies can be `{"status":"error","message":...}` rather than
   the documented `{"error":...}` - `_request` checks both.
 - Listing calls from the UI thread use a 10s timeout (`LIST_TIMEOUT`).
@@ -248,30 +255,23 @@ that matter (each one was learned from a real failure):
 
 ## 8. Open items / next steps
 
-1. **Verify against the live MinuteDock account** (user agreed to use a
-   throwaway test Project): `PUT /projects/{id}` with the nested body
-   actually updates the budget, and sending the budget fields as `null`
-   actually clears it. Both are implemented but unconfirmed.
-2. **Real click-through by the user** of everything added recently: Create
-   modes, Scope step, contact picker, Specification tickboxes, review
-   summary, reopen/regenerate, templates (save/apply/manage/edit), batch.
-3. **Packaging** hasn't been rebuilt since these changes
+Done by the user after `7ec22ed` (no longer open): live MinuteDock budget
+update/clear verified; real click-through of all the new features;
+Specifications.docx `Foundations:` now uses a space like the other strength
+lines (already in `7ec22ed`); the old duplicate-job-number test folders on
+the D: drive were cleaned up.
+
+1. **Packaging** hasn't been rebuilt since these changes
    (`build_scripts/output/` is stale). The zip/PDF the user distributes:
    `AutomaticProcess-v1.0.0.zip` = Setup.exe + `USER_GUIDE.pdf`; the PDF is
    made ad hoc (Markdown → styled HTML with `python-markdown` → headless
    Edge `msedge --headless --print-to-pdf`). No script for it exists yet.
    Version is hardcoded `1.0.0` in `installer.iss`; user has kept 1.0.0.
-4. Specifications.docx: `Foundations:` is followed by a **tab** (from the
-   original template) while the other strength lines use a space - user saw
-   it; offered to switch it to a space, no answer yet.
-5. The user's D: drive still has old test project folders with duplicate
-   job numbers (e.g. 1232 ×3, 343 ×2, made before uniqueness existed); they
-   now block those numbers. User decides whether to clean up.
-6. Saved projects/templates are single-PC; a shared location (a Settings
+2. Saved projects/templates are single-PC; a shared location (a Settings
    path on the NAS) was discussed as a later step if the user needs it.
-7. No automated tests - the scripts described in section 7 would be a good
+3. No automated tests - the scripts described in section 7 would be a good
    base for a pytest suite.
-8. Ideas mentioned but not requested: managing saved Inspection "Other"
+4. Ideas mentioned but not requested: managing saved Inspection "Other"
    items (rename/delete); a "description" text for the concrete "Others"
    strength line.
 

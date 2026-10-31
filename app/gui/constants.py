@@ -157,3 +157,9 @@ INSPECTION_ITEM_LABELS: dict[str, str] = {key: item_text for key, item_text, _ti
 
 # document.tables index of PS1's Schedule of Inspections table.
 PS1_INSPECTION_TABLE_INDEX = 2
+
+# Review summary of an update run (reopening a project whose documents were
+# already generated): the "Changes" section's heading, and the suffix marking
+# a changed row in the other sections (both rendered highlighted).
+CHANGES_HEADING = "Changes"
+UPDATED_SUFFIX = " (updated)"

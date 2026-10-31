@@ -45,6 +45,14 @@ class ModeStepMixin:
         # into the wizard, so re-validating this step doesn't reload it over
         # edits, and picking a different folder starts from a clean slate.
         self._loaded_project_folder: str | None = None
+        # True when the opened project already had its documents generated,
+        # so this run *updates* it (button "Update", changes listed on
+        # Review) rather than creating its documents for the first time.
+        self.is_update_run = False
+        # The Review summary rows as they were right after the project was
+        # opened - what _review_changes() compares against.
+        self._update_baseline: dict[tuple[str, str], str] | None = None
+        self._pending_update_baseline = False
 
     # ---------- Step: Create mode ----------
     def _build_mode_step(self, parent: ttk.Frame) -> None:
@@ -150,6 +158,7 @@ class ModeStepMixin:
         """
         if self.create_mode_var.get() != "documents_only":
             self.existing_project_folder_var.set("")
+            self._clear_update_state()
             if self._loaded_project_folder is not None:
                 # Everything in the wizard came from that project's saved data.
                 self._loaded_project_folder = None
@@ -188,12 +197,18 @@ class ModeStepMixin:
                 if saved is not None:
                     self._apply_project_data(saved)
                 self._loaded_project_folder = folder_name
+                self.is_update_run = bool(saved and saved.get("documents_generated"))
+                self._update_baseline = None
+                # Taken at the end of this method, once MinuteDock has filled
+                # in the client/budget too (survives a failed attempt).
+                self._pending_update_baseline = self.is_update_run
             self.job_number_var.set(job_number)
             self.street_var.set(street)
             if not self._load_existing_minutedock_project(job_number):
                 return False
         else:
             self.existing_minutedock_project = None
+            self._clear_update_state()
             if mode == "batch" and self.template_choice_var.get() == NO_TEMPLATE:
                 messagebox.showerror("Missing info", "Choose the template to create the jobs from.")
                 return False
@@ -207,7 +222,15 @@ class ModeStepMixin:
         # is identical in every step-list shape, since only what comes
         # *after* General differs.
         self.steps = self._build_step_list()
+        if self._pending_update_baseline:
+            self._update_baseline = self._summary_values()
+            self._pending_update_baseline = False
         return True
+
+    def _clear_update_state(self) -> None:
+        self.is_update_run = False
+        self._update_baseline = None
+        self._pending_update_baseline = False
 
     def _load_existing_minutedock_project(self, job_number: str) -> bool:
         """Find the job's MinuteDock Project (made by an earlier

@@ -109,9 +109,9 @@ def update_project(token: str, project_id: str, fields: dict[str, Any]) -> dict[
     The body is nested under "project", per the docs' Request Format section
     and matching the POST that find_or_create_project already uses
     successfully (the update operation's own example shows unnested fields,
-    so the docs disagree with themselves here). Also not documented: whether
-    sending budget fields as null clears a budget - confirm against a test
-    Project in MinuteDock's web UI.
+    so the docs disagree with themselves here). Verified by the user
+    against the live account: this nested body updates a Project's budget,
+    and sending the budget fields as null clears it.
     """
     return _request("PUT", token, f"/projects/{project_id}", json={"project": fields})
 

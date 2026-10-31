@@ -17,12 +17,14 @@ from app.gui.constants import (
     ALTERNATIVE_SOLUTION_TEXT,
     B1_OPTIONS,
     B2_LETTER_MATERIALS,
+    CHANGES_HEADING,
     CM_ITEMS,
     INSPECTION_ITEMS,
     SCOPE_ITEMS,
     SPECIFICATION_NUMERIC_FIELDS,
     SPECIFICATION_SECTIONS,
     SPECIFICATION_TICKABLE_FIELDS,
+    UPDATED_SUFFIX,
 )
 from app.gui.steps.mode_step import CREATE_MODE_OPTIONS
 from app.gui.steps.template_step import NO_TEMPLATE
@@ -41,6 +43,60 @@ def _text(value: str) -> str:
 
 class ReviewSummaryMixin:
     def _build_review_summary(self) -> Summary:
+        """The summary shown on Review. When updating an existing project,
+        a "Changes" section comes first and changed rows are marked."""
+        sections = self._build_plain_summary()
+        if not self.is_update_run or self._update_baseline is None:
+            return sections
+        changes = self._review_changes()
+        changed_keys = {(section, label) for section, label, _old, _new in changes}
+        marked: Summary = [
+            (
+                heading,
+                [
+                    (label + UPDATED_SUFFIX if (heading, label) in changed_keys else label, value)
+                    for label, value in rows
+                ],
+            )
+            for heading, rows in sections
+        ]
+        if changes:
+            change_rows = []
+            for section, label, old, new in changes:
+                if "\n" in old or "\n" in new:
+                    value = f"before:\n{old}\nnow:\n{new}"
+                else:
+                    value = f"{old}  \u2192  {new}"
+                change_rows.append((f"{section} \u203a {label}", value))
+        else:
+            change_rows = [("No changes", "The documents will be regenerated with the same values.")]
+        return [marked[0], (CHANGES_HEADING, change_rows), *marked[1:]]
+
+    def _summary_values(self) -> dict[tuple[str, str], str]:
+        """{(section, label): value} for every row except the "Create"
+        section (which describes the run, not the project's data)."""
+        values = {}
+        for heading, rows in self._build_plain_summary()[1:]:
+            for label, value in rows:
+                if heading == "MinuteDock" and label == "Budget":
+                    # Drop the "(changed - will be saved)" / "(unchanged)" note.
+                    value = value.split("   (")[0]
+                values[(heading, label)] = value
+        return values
+
+    def _review_changes(self) -> list[tuple[str, str, str, str]]:
+        """(section, label, before, now) for every value that differs from
+        when the project was opened, in summary order."""
+        before = self._update_baseline or {}
+        now = self._summary_values()
+        changes = []
+        for key in list(now) + [k for k in before if k not in now]:
+            old, new = before.get(key, _NOT_SET), now.get(key, "(removed)")
+            if old != new:
+                changes.append((key[0], key[1], old, new))
+        return changes
+
+    def _build_plain_summary(self) -> Summary:
         titles = {step["title"] for step in self.steps}
         mode = self.create_mode_var.get()
         if mode == "batch":
@@ -81,7 +137,7 @@ class ReviewSummaryMixin:
                     f"Jobs ({len(jobs)})",
                     "\n".join(
                         f"{row['job_number']} - {row['street']}, {row['suburb']}, {row['town']}   "
-                        f"(client: {row['client_info']})"
+                        f"(client: {row['client_info']}{self._new_client_note(row['client_info'])})"
                         for row in jobs
                     ),
                 )
@@ -128,6 +184,14 @@ class ReviewSummaryMixin:
             )
         return "Create", rows
 
+    def _new_client_note(self, client: str) -> str:
+        """" - new, added to MinuteDock on Create" for a client that isn't an
+        existing MinuteDock contact (when the contact list is known)."""
+        known = self._minutedock_contact_names
+        if client and known is not None and client.casefold() not in {n.casefold() for n in known}:
+            return " - new, added to MinuteDock on Create"
+        return ""
+
     def _summary_general(self) -> list[tuple[str, str]]:
         client = self.client_info_var.get().strip()
         if client and client.casefold() in {name.casefold() for name in self._new_contact_names}:
@@ -169,10 +233,9 @@ class ReviewSummaryMixin:
             ("Basis of statement", "\n".join(basis) if basis else _NOT_SET),
             (
                 "Date",
-                {
-                    "batch": "Today's date (set when the jobs are created)",
-                    "edit_template": "(not stored in templates)",
-                }.get(self.create_mode_var.get()) or _text(self._format_selected_date()),
+                "(not stored in templates)"
+                if self.create_mode_var.get() == "edit_template"
+                else _text(self._format_selected_date()),
             ),
         ]
 

@@ -70,7 +70,9 @@ When you choose **Open an existing project**, a list of project folders appears.
 
 After you pick one, every page is filled in with what was entered last time - just change what you need. The job number and street can't be changed (they're the folder's name). The top of every page shows which folder you're working on.
 
-If the project already has documents, clicking Create **moves the old documents into a `_previous versions` folder** (inside the project folder, with the date and time) before making the new ones - nothing is deleted. If one of the old documents is open in Word, close it first.
+**Updating vs. creating:** if the project's documents were already generated before, this is an **update** - the last page is called **Review & Update**, its button says **Update**, and a **Changes** section at the top of the summary lists every value you changed (old value → new value). The changed lines are also shown in orange, marked "(updated)", in the rest of the summary. If you changed nothing it says so. If the project has no documents yet (e.g. it was made with "folders only"), it's a normal **Create**.
+
+When updating, the app **moves the old documents into a `_previous versions` folder** (inside the project folder, with the date and time) before making the new ones - nothing is deleted. If one of the old documents is open in Word, close it first.
 
 In MinuteDock, no new project is made - the job's existing project is used, and its budget is only changed if you changed it.
 
@@ -134,7 +136,7 @@ When you're opening an existing project, this page shows the project's current b
 
 This page lists **everything you entered** on every page, so you can check it all before creating. To change something, click **< Back**.
 
-Click **Create**. A "please wait" window with a moving bar appears while it works - that's normal; it usually takes a few seconds. When it's done a green ✔ message appears, and the app goes back to the Create mode page for the next project. Your settings, councils and templates are never cleared.
+Click **Create** (or **Update**, when you're updating an existing project - see "Opening an existing project"). A "please wait" window with a moving bar appears while it works - that's normal; it usually takes a few seconds. When it's done a green ✔ message appears, and the app goes back to the Create mode page for the next project. Your settings, councils and templates are never cleared.
 
 **If something fails partway** (e.g. a document is open in Word, or MinuteDock can't be reached), a message tells you what was created and what failed. What was already created is kept. Don't just click Create again - the folders now exist, so the job number counts as used. Instead, use **Open an existing project** to finish it.
 
@@ -151,11 +153,14 @@ A template stores everything **except** the General page (job number, client, ad
 ## Creating several jobs at once
 
 1. On the Create mode page choose **Create several jobs from a template** and pick the **Template**.
-2. On the **Jobs** page, fill in one row per job: Job number, Client (pick or type a new one), Street, Suburb, Town. **Add job** adds a row; **Remove** deletes one.
-3. Click Next - the app checks every row (missing fields, the same job number twice in the table, or a job number that's already used).
-4. Review & Create lists all the jobs and the template's settings. Click **Create all**.
+2. On the **Jobs** page:
+   - **Date**: the date written into every job's PS1 report. It starts as today - change the year/month/day if you need another date, or click **Today** to go back to today.
+   - Fill in one row per job: Job number, Client, Street, Suburb, Town. **Add job** adds a row; **Remove** deletes one.
+   - **Client**: pick an existing MinuteDock client from the dropdown. For a new client, click **Add new client...** and type the name - it then appears in every row's dropdown, and it's created in MinuteDock when you click Create all. (You can also just type a new name straight into the Client box.)
+3. Click Next - the app checks the date and every row (missing fields, the same job number twice in the table, or a job number that's already used).
+4. Review & Create lists all the jobs (new clients are marked "new, added to MinuteDock on Create"), the date, and the template's settings. Click **Create all**.
 
-Each job is created completely (folders, the six documents with today's date, MinuteDock) one after another - the progress window shows which one it's on. If one job fails, the others still go ahead. At the end you get a list:
+Each job is created completely (folders, the six documents with the date you chose, MinuteDock - including any new clients) one after another - the progress window shows which one it's on. If one job fails, the others still go ahead. At the end you get a list:
 
 - **OK** - created.
 - **PARTIAL** - folders/documents were created but something else failed (e.g. MinuteDock) - fix it later with **Open an existing project**.

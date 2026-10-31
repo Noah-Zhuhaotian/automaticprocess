@@ -28,6 +28,7 @@ from app.gui.constants import (
     B2_LETTER_MATERIALS,
     B2_LETTER_TEMPLATE,
     CALCULATION_STATEMENT_TEMPLATE,
+    CHANGES_HEADING,
     CHECKED,
     CM_ITEMS,
     INSPECTION_ITEM_LABELS,
@@ -40,6 +41,7 @@ from app.gui.constants import (
     SPECIFICATION_SECTIONS,
     SPECIFICATION_TEMPLATE,
     UNCHECKED,
+    UPDATED_SUFFIX,
 )
 from app.gui.steps.template_step import NO_TEMPLATE
 from app.utils.logger import get_logger
@@ -116,7 +118,13 @@ class ReviewStepMixin:
                 if has_documents
                 else ""
             )
-            text = f'Click Create to generate {documents} into the existing folder "{folder}".{regenerate} {minutedock}'
+            if self.is_update_run:
+                text = (
+                    f'Click Update to regenerate {documents} of "{folder}" with your changes '
+                    f'(listed under "Changes" below).{regenerate} {minutedock}'
+                )
+            else:
+                text = f'Click Create to generate {documents} into the existing folder "{folder}".{regenerate} {minutedock}'
         elif mode == "batch":
             count = len(self._batch_values())
             text = (
@@ -168,14 +176,18 @@ class ReviewStepMixin:
         text.tag_configure("heading", font=("Segoe UI", 10, "bold"), spacing1=12, spacing3=2)
         text.tag_configure("label", font=("Segoe UI", 9, "bold"), lmargin1=12)
         text.tag_configure("value", font=("Segoe UI", 9), lmargin1=12, lmargin2=12)
+        # Updated values (update runs only) stand out in orange.
+        text.tag_configure("updated", foreground="#C55A11")
 
         for heading, rows in self._build_review_summary():
-            text.insert("end", heading + "\n", "heading")
+            in_changes = heading == CHANGES_HEADING
+            text.insert("end", heading + "\n", ("heading", "updated") if in_changes else "heading")
             for label, value in rows:
-                text.insert("end", f"{label}: ", "label")
+                highlight = in_changes or label.endswith(UPDATED_SUFFIX)
+                text.insert("end", f"{label}: ", ("label", "updated") if highlight else "label")
                 if "\n" in value:
                     value = "\n" + "\n".join(f"    {line}" for line in value.split("\n"))
-                text.insert("end", value + "\n", "value")
+                text.insert("end", value + "\n", ("value", "updated") if highlight else "value")
         text.configure(state="disabled")
 
     def _build_scope_lines(self) -> list[str]:
@@ -675,7 +687,9 @@ class ReviewStepMixin:
 
         self.create_result_var.set(f"Created:\n{outcome['summary']}")
         self._update_availability_status()
-        self._show_success_dialog("Done", "Project created successfully.")
+        self._show_success_dialog(
+            "Done", "Project updated successfully." if self.is_update_run else "Project created successfully."
+        )
         self._reset_for_new_project()
 
     def _save_project_data(self) -> None:
@@ -709,7 +723,9 @@ class ReviewStepMixin:
 
         frame = ttk.Frame(dialog, padding=24)
         frame.pack(fill="both", expand=True)
-        self._progress_text_var = tk.StringVar(value="Creating project, please wait...")
+        self._progress_text_var = tk.StringVar(
+            value="Updating project, please wait..." if self.is_update_run else "Creating project, please wait..."
+        )
         ttk.Label(frame, textvariable=self._progress_text_var).pack(pady=(0, 12))
         progress = ttk.Progressbar(frame, mode="indeterminate", length=260)
         progress.pack()
@@ -784,6 +800,7 @@ class ReviewStepMixin:
         self.existing_project_folder_var.set("")
         self.existing_minutedock_project = None
         self._loaded_project_folder = None
+        self._clear_update_state()
         self.template_choice_var.set(NO_TEMPLATE)
         self._applied_template = None
         self.editing_template_name = None
