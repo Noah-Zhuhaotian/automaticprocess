@@ -21,7 +21,11 @@ Everything you enter for a project is saved, so you can **open the project again
 3. Click through "Next," choosing whether you want a desktop shortcut.
 4. Once installed, you'll find "Automatic Process Assistant" in the Start Menu, and on the desktop if you chose that option.
 
-**Updating:** just run the new Setup.exe over the old one - no need to uninstall first. Your settings, council list, saved projects and templates are kept: they're stored in your Windows user folder, not in the program folder, so installing a new version (or even uninstalling) never deletes them.
+**Updating:** click **Check for updates** (top-right, next to Settings). If a newer version is available, it shows what's new and asks whether to install it; click **Yes** and the app downloads it, closes, upgrades itself and reopens. Windows asks for permission to make changes (an administrator password if you aren't one). Finish or note down anything you're entering first - the wizard is closed during the upgrade. The version you have is shown in the window title.
+
+You can also update by running a new Setup.exe over the old one - no need to uninstall first. Either way your settings, council list, saved projects and templates are kept: they're stored in your Windows user folder, not in the program folder, so installing a new version (or even uninstalling) never deletes them.
+
+(Version 1.0.0 doesn't have the **Check for updates** button - install the next version once by hand, and from then on the button does it.)
 
 ## First thing to do after opening: Settings
 
@@ -179,6 +183,9 @@ No councils have been added yet - click **Add Council...**.
 
 **Q: A Word document failed while generating?**
 Usually the file (or the template) is open in Word - close it and try again.
+
+**Q: Check for updates says it can't reach GitHub?**
+The app checks for new versions on GitHub over the internet - check the internet connection and try again later. Nothing on your computer was changed.
 
 **Q: Where is my saved data kept?**
 In your Windows user folder (`%APPDATA%\AutomaticProcess`): settings, saved projects (`projects`), templates (`templates`) and logs. It's only on this computer, and software updates don't remove it.

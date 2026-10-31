@@ -2,17 +2,24 @@
 ; into a single Setup.exe installer: Start Menu shortcut, optional desktop
 ; shortcut, proper "Apps & features" uninstall entry.
 ;
-; Build order (from the repo root):
+; Build: build_scripts/release.ps1 (or by hand, from the repo root):
 ;   1. pyinstaller build_scripts/automaticprocess.spec   (produces dist/AutomaticProcess/)
-;   2. "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" build_scripts/installer.iss
+;   2. "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" /DMyAppVersion=x.y.z build_scripts/installer.iss
+;      with x.y.z = app/version.py's __version__
 ; Output: build_scripts/output/AutomaticProcess-Setup.exe
 ;
 ; AppId is a fixed GUID (not the app name) so re-running the installer for a
 ; future version upgrades in place instead of creating a second entry -
 ; never change it once real installs exist.
+;
+; The in-app updater (app/core/updater.py) runs this installer with
+; /SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS and then exits;
+; the second [Run] entry reopens the app after such a silent upgrade.
 
+#ifndef MyAppVersion
+  #error Pass the version: ISCC /DMyAppVersion=x.y.z (app/version.py) - build_scripts/release.ps1 does this
+#endif
 #define MyAppName "Automatic Process Assistant"
-#define MyAppVersion "1.0.0"
 #define MyAppExeName "AutomaticProcess.exe"
 #define MyDistDir "..\dist\AutomaticProcess"
 
@@ -20,6 +27,8 @@
 AppId={{9BD5349E-A6C3-4593-BA5B-CE126D48BA77}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}
+CloseApplications=force
 DefaultDirName={autopf}\AutomaticProcess
 DefaultGroupName=Automatic Process Assistant
 DisableProgramGroupPage=yes
@@ -47,3 +56,6 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; Silent (in-app) upgrade: reopen the app as the signed-in user, not the
+; elevated installer account.
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait runasoriginaluser; Check: WizardSilent

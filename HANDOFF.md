@@ -13,7 +13,10 @@ history of earlier sessions was retired from this file - it's in git
 - Windows desktop app, **Python 3.13 + tkinter**, deps: `python-docx`,
   `requests`, `pyinstaller` (build only). Run with `python main.py`.
 - Packaged as an installer: PyInstaller onedir → Inno Setup
-  `AutomaticProcess-Setup.exe` (`build_scripts/`, see its README).
+  `AutomaticProcess-Setup.exe` (`build_scripts/`, see its README), published
+  as a GitHub release by `build_scripts/release.ps1`. Users upgrade with the
+  in-app "Check for updates" button (section 6a). Version lives only in
+  `app/version.py`; bump it for every release.
 - Built for one engineering office (Christchurch, NZ) by one user, who
   communicates in **Chinese** but wants **all code, comments and UI text
   in English**. Reply to them in Chinese.
@@ -96,12 +99,15 @@ app/core/            (no tkinter - safe to call from the Create worker thread)
                       update_project_budget
   project_store.py    save_project / load_project / saved_job_numbers
   template_store.py   list/load/save/rename/delete templates
+  updater.py          check_for_update / download_installer / launch_installer
+app/version.py        __version__
 app/config/settings.py  DEFAULT_SETTINGS, load_settings/save_settings
 app/gui/
   main_window.py      MainWindow = all step mixins + tk.Tk; _init_vars,
                       _build_step_list (mode-dependent), _show_step (header),
                       _go_back/_go_next (last step → _on_create),
                       _build_scroll_area (see below)
+  update_check.py     UpdateCheckMixin: header "Check for updates" button
   constants.py        SCOPE_ITEMS, B1_OPTIONS, INSPECTION_ITEMS,
                       SPECIFICATION_* tables, template paths, fixed texts
   project_state.py    ProjectStateMixin: _clear_project_fields /
@@ -226,6 +232,28 @@ nested under the resource name (`{"project": {...}}`).
 - Unchecking "billable" in MinuteDock blocks time entries - that's why it's
   not a user option.
 
+## 6a. Self-update (GitHub releases)
+
+- `updater.check_for_update` reads
+  `api.github.com/repos/Noah-Zhuhaotian/automaticprocess/releases/latest`
+  (public repo, no token). It's an update only if the tag (`v1.2.3`) is
+  newer than `__version__` **and** the release has an asset named exactly
+  `AutomaticProcess-Setup.exe` (`v1.0.0` only has a zip, so it's never
+  offered).
+- Download goes to `%TEMP%\AutomaticProcess-update\`, checked against the
+  asset's size and GitHub's `digest` (`sha256:...`).
+- Install: `os.startfile(setup, arguments="/SILENT /SUPPRESSMSGBOXES
+  /NORESTART /CLOSEAPPLICATIONS")` (ShellExecute, so UAC works), then the
+  app `destroy()`s itself. `installer.iss` has `CloseApplications=force` and
+  a `WizardSilent` `[Run]` entry with `runasoriginaluser` that reopens the
+  app - as the signed-in user, so `%APPDATA%` is theirs even when an admin
+  typed credentials into UAC. A cancelled UAC prompt usually happens after
+  the app has closed (Inno's loader elevates itself); the user just reopens it.
+- Running from source (`not sys.frozen`) only reports the new version.
+- `installer.iss` refuses to compile without `/DMyAppVersion` so the
+  installer and `app/version.py` can't drift; `release.ps1` passes it.
+- Machines still on 1.0.0 have no button - they need one manual install.
+
 ## 7. Testing - how changes have been verified
 
 There's no test suite (`tests/` is empty). Every feature was verified with
@@ -272,12 +300,16 @@ Specifications.docx `Foundations:` now uses a space like the other strength
 lines (already in `7ec22ed`); the old duplicate-job-number test folders on
 the D: drive were cleaned up.
 
-1. **Packaging** hasn't been rebuilt since these changes
-   (`build_scripts/output/` is stale). The zip/PDF the user distributes:
-   `AutomaticProcess-v1.0.0.zip` = Setup.exe + `USER_GUIDE.pdf`; the PDF is
-   made ad hoc (Markdown → styled HTML with `python-markdown` → headless
-   Edge `msedge --headless --print-to-pdf`). No script for it exists yet.
-   Version is hardcoded `1.0.0` in `installer.iss`; user has kept 1.0.0.
+1. **First release with the updater (`v1.0.1`) not published yet.** The
+   user needs `gh` installed and signed in, then runs `release.ps1`
+   (build_scripts/README). The real end-to-end upgrade (download → UAC →
+   silent install → app reopens) can only be tested once two releases with
+   the updater exist (1.0.1 installed, 1.0.2 published). The zip/PDF for
+   manual installs: `AutomaticProcess-v<version>.zip` = Setup.exe +
+   `USER_GUIDE.pdf`; the PDF is made ad hoc (Markdown → styled HTML with
+   `python-markdown` → headless Edge `msedge --headless --print-to-pdf`) and
+   dropped into `build_scripts/output/` before `release.ps1`. No script for
+   the PDF exists yet.
 2. Saved projects/templates are single-PC; a shared location (a Settings
    path on the NAS) was discussed as a later step if the user needs it.
 3. No automated tests - the scripts described in section 7 would be a good
@@ -287,6 +319,14 @@ the D: drive were cleaned up.
    strength line.
 
 ## 9. Recent history (newest first)
+
+Self-update (section 6a): "Check for updates" button, `app/version.py`
+(1.0.1), `release.ps1`, installer version passed in. Verified: version
+compare, real GitHub check (read-only), real download + digest check,
+headless GUI flows (no update / offline / from source / declined /
+install / UAC cancelled) with the network and installer stubbed, local
+PyInstaller + ISCC build (Setup.exe FileVersion 1.0.1) and the packaged
+exe starting. Not yet: a real silent upgrade.
 
 Back/Next pinned to the bottom of the window and the step content made
 scrollable (`main_window._build_scroll_area`); verified headless at

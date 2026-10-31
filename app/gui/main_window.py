@@ -77,6 +77,8 @@ from app.gui.steps.settings_step import SettingsStepMixin
 from app.gui.steps.specification_step import SpecificationStepMixin
 from app.gui.steps.template_step import TemplateStepMixin
 from app.gui.steps.waivers_step import WaiversStepMixin
+from app.gui.update_check import UpdateCheckMixin
+from app.version import __version__
 
 
 class MainWindow(
@@ -95,11 +97,12 @@ class MainWindow(
     ReviewStepMixin,
     ReviewSummaryMixin,
     ProjectStateMixin,
+    UpdateCheckMixin,
     tk.Tk,
 ):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Automatic Process Assistant")
+        self.title(f"Automatic Process Assistant {__version__}")
         self.geometry("760x620")
         self.resizable(True, True)
 
@@ -120,6 +123,9 @@ class MainWindow(
         self.header_var = tk.StringVar()
         ttk.Label(header_frame, textvariable=self.header_var, font=("Segoe UI", 12, "bold")).pack(side="left")
         ttk.Button(header_frame, text="Settings", command=self._open_settings_dialog).pack(side="right")
+        ttk.Button(header_frame, text="Check for updates", command=self._check_for_updates).pack(
+            side="right", padx=(0, 8)
+        )
 
         # Packed before the content (side="bottom") so Back/Next keep their
         # place when the window is too small - pack shrinks whatever is

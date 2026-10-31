@@ -41,6 +41,7 @@ Review & Create shows a full summary of everything entered.
 ```
 app/
 ├── main.py                    # entry point
+├── version.py                 # __version__ - single source of truth, bump per release
 ├── config/settings.py         # %APPDATA%\AutomaticProcess\user_settings.json
 ├── utils/logger.py            # console + %APPDATA%\AutomaticProcess\logs\app.log
 ├── core/                      # no tkinter - safe on the Create worker thread
@@ -49,9 +50,11 @@ app/
 │   ├── minutedock_client.py   # thin MinuteDock REST wrapper
 │   ├── web_filler.py          # MinuteDock business logic (find-or-create, budget update)
 │   ├── project_store.py       # saved wizard input per job  (%APPDATA%\...\projects\<job>.json)
-│   └── template_store.py      # saved templates             (%APPDATA%\...\templates\<name>.json)
+│   ├── template_store.py      # saved templates             (%APPDATA%\...\templates\<name>.json)
+│   └── updater.py             # self-update: latest GitHub release -> download -> silent install
 └── gui/
     ├── main_window.py         # MainWindow: composes the step mixins, step list, navigation
+    ├── update_check.py        # "Check for updates" button (worker thread + dialogs)
     ├── constants.py           # shared lists, template paths, fixed texts
     ├── project_state.py       # clear / collect / apply every per-project field (saves, reopen, templates)
     └── steps/                 # one mixin per step (vars, build, validate)
@@ -61,7 +64,7 @@ app/
         review_step (Create orchestration + worker), review_summary
 
 resources/templates/           # the six Word templates
-build_scripts/                 # PyInstaller spec + Inno Setup script (see its README)
+build_scripts/                 # PyInstaller spec, Inno Setup script, release.ps1 (see its README)
 USER_GUIDE.md / HANDOFF.md
 ```
 
@@ -111,6 +114,8 @@ verified (headless `MainWindow` scripts) and the gotchas to follow.
 
 ## Packaging
 
-`AutomaticProcess-Setup.exe` via PyInstaller + Inno Setup - see
-[build_scripts/README.md](build_scripts/README.md). User data lives in
+`AutomaticProcess-Setup.exe` via PyInstaller + Inno Setup, published as a
+GitHub release by `build_scripts/release.ps1` - see
+[build_scripts/README.md](build_scripts/README.md). The app's "Check for
+updates" button installs the latest release. User data lives in
 `%APPDATA%\AutomaticProcess` and is never touched by install/update/uninstall.

@@ -12,13 +12,37 @@ shortcut, proper "Apps & features" uninstall entry).
   JRSoftware.InnoSetup`). Installs `ISCC.exe` (the command-line compiler)
   to `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`.
 
-## Build
+- GitHub CLI, for publishing releases: `winget install GitHub.cli`, then
+  `gh auth login`.
 
-From the repo root:
+## Release (what users get from "Check for updates")
+
+1. Bump `__version__` in `app/version.py` (e.g. `1.0.1` -> `1.0.2`), commit
+   and push. The app only offers a release whose tag is newer than its own
+   version.
+2. Optionally put `USER_GUIDE.pdf` in `build_scripts/output/` to also
+   attach a zip (Setup.exe + PDF) for manual installs.
+3. From anywhere:
+
+   ```
+   powershell -ExecutionPolicy Bypass -File build_scripts\release.ps1 -Notes "What changed, for users"
+   ```
+
+   It refuses to run with uncommitted/unpushed changes or if the release
+   already exists, then builds (PyInstaller + Inno Setup, stamped with the
+   version) and runs `gh release create v<version>` with
+   `AutomaticProcess-Setup.exe` attached. That asset name is what the app
+   looks for (`updater.SETUP_ASSET_NAME`) - don't rename it. `-Notes` is
+   shown to users in the "Update available" prompt.
+
+## Build only
+
+From the repo root (the version must be passed - the script refuses to
+compile without it):
 
 ```
 pyinstaller build_scripts/automaticprocess.spec
-"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" build_scripts\installer.iss
+"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" /DMyAppVersion=1.0.1 build_scripts\installer.iss
 ```
 
 Output: `build_scripts/output/AutomaticProcess-Setup.exe` - hand this one
@@ -40,7 +64,10 @@ folders being up to date with the current code.
 - **`installer.iss`**: `AppId` is a fixed GUID, not the app name - re-running
   the installer for a future version upgrades the existing install rather
   than creating a duplicate "Apps & features" entry. Never change it once
-  real installs exist.
+  real installs exist. `CloseApplications=force` plus a second `[Run]`
+  entry (`Check: WizardSilent`, `runasoriginaluser`) make the in-app
+  updater's silent install close the running app and reopen it afterwards
+  as the signed-in user.
 - **`resources/app_icon.ico`**: generated from `resources/automation.png`
   (padded to a square canvas, upscaled to 256x256 before Pillow's ICO
   writer runs, since it only emits sizes <= the source image - see git
