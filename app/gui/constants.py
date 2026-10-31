@@ -73,7 +73,8 @@ SPECIFICATION_NUMERIC_FIELDS: dict[str, list[tuple[str, str]]] = {
 # deleted (word_filler.remove_paragraphs_with_tokens). These are CONCRETE -
 # GENERAL's 28-day strengths; a selected section needs at least one ticked.
 # Plain and Fibre foundations share one line ("Foundations: ..."), built in
-# review_step.py from whichever of the two are ticked.
+# specification_step.py from whichever of the two is ticked (only one can
+# be - SPECIFICATION_EXCLUSIVE_FIELDS).
 SPECIFICATION_TICKABLE_FIELDS = (
     "precast_strength_var",
     "foundation_plain_strength_var",
@@ -81,6 +82,13 @@ SPECIFICATION_TICKABLE_FIELDS = (
     "metal_deck_topping_strength_var",
     "concrete_other_strength_var",
 )
+# Tickable fields that rule each other out: the foundations are either
+# Plain or Fibre concrete, never both. Ticking one unticks (and clears) the
+# other.
+SPECIFICATION_EXCLUSIVE_FIELDS = {
+    "foundation_plain_strength_var": "foundation_fibre_strength_var",
+    "foundation_fibre_strength_var": "foundation_plain_strength_var",
+}
 
 SPECIFICATION_DROPDOWN_FIELDS: dict[str, list[str]] = {
     "grout_strength_var": ["17.5 MPa (Zone B)", "20 MPa (Zone C)", "25 MPa (Zone D)"],

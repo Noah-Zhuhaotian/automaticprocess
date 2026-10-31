@@ -121,7 +121,7 @@ This is the "Schedule of Inspections" table in the PS1 report (columns: No., Ite
 - Tick which sections of the Specification apply; unticked sections are removed from the document.
 - Some sections have values to fill in (numbers only):
   - **Excavation and Hardfill**: Ultimate bearing capacity (kPa).
-  - **Concrete - General**: each strength has its own tickbox - **Precast elements**, **Foundations - Plain Concrete**, **Foundations - Fibre Concrete**, **Metal deck topping**, **Others** (all MPa). Only the ticked ones are written into the document; tick at least one.
+  - **Concrete - General**: each strength has its own tickbox - **Precast elements**, **Foundations - Plain Concrete**, **Foundations - Fibre Concrete**, **Metal deck topping**, **Others** (all MPa). Only the ticked ones are written into the document; tick at least one. The foundations are either Plain or Fibre concrete - ticking one unticks the other.
   - **Masonry Blockwork**: Grout strength, chosen from a list.
 
 ## Step 8 - B2 Letter

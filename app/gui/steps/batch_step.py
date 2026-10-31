@@ -209,6 +209,10 @@ class BatchStepMixin:
                     seen[job] = index
         if not self._format_selected_date():
             problems.insert(0, "Date: pick a full date (or click Today)")
+        conflict = self._specification_exclusive_conflict()
+        if conflict:
+            # From a template saved before Plain/Fibre were made exclusive.
+            problems.insert(0, f'Template "{self._applied_template}": {conflict} (Manage templates > Edit values)')
         if problems:
             messagebox.showerror("Check the jobs", "\n".join(problems))
             return False

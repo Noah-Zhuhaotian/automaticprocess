@@ -4,7 +4,8 @@ numeric fields embedded in specific sections.
 
 CONCRETE - GENERAL's strengths (SPECIFICATION_TICKABLE_FIELDS) each have
 their own tickbox: only ticked ones are written to the document, an
-unticked one's line is removed. Numeric fields only accept numbers.
+unticked one's line is removed. Foundations Plain/Fibre are one-or-the-other
+(SPECIFICATION_EXCLUSIVE_FIELDS). Numeric fields only accept numbers.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from tkinter import messagebox, ttk
 
 from app.gui.constants import (
     SPECIFICATION_DROPDOWN_FIELDS,
+    SPECIFICATION_EXCLUSIVE_FIELDS,
     SPECIFICATION_NUMERIC_FIELDS,
     SPECIFICATION_SECTIONS,
     SPECIFICATION_TICKABLE_FIELDS,
@@ -74,7 +76,7 @@ class SpecificationStepMixin:
                             fields_frame,
                             text=label_text,
                             variable=self.specification_field_enabled_vars[var_name],
-                            command=lambda t=title: self._on_specification_toggle(t),
+                            command=lambda t=title, v=var_name: self._on_specification_field_tick(t, v),
                         )
                         checkbutton.grid(row=field_row, column=0, sticky="w", pady=1)
                         self._specification_field_checkbuttons[var_name] = checkbutton
@@ -115,6 +117,23 @@ class SpecificationStepMixin:
             return self.specification_field_enabled_vars[var_name].get()
         return True
 
+    def _on_specification_field_tick(self, title: str, var_name: str) -> None:
+        """Ticking one of an exclusive pair unticks the other (whose value
+        is then cleared by _on_specification_toggle)."""
+        partner = SPECIFICATION_EXCLUSIVE_FIELDS.get(var_name)
+        if partner is not None and self.specification_field_enabled_vars[var_name].get():
+            self.specification_field_enabled_vars[partner].set(False)
+        self._on_specification_toggle(title)
+
+    def _specification_exclusive_conflict(self) -> str | None:
+        """An error message if both fields of an exclusive pair are ticked
+        (only possible in data saved before they were made exclusive)."""
+        enabled = self.specification_field_enabled_vars
+        for var_name, partner in SPECIFICATION_EXCLUSIVE_FIELDS.items():
+            if enabled[var_name].get() and enabled[partner].get():
+                return "Foundations can be either Plain Concrete or Fibre Concrete, not both - untick one."
+        return None
+
     def _on_specification_toggle(self, title: str) -> None:
         """Enable a field's entry only while its section - and, for a
         tickable field, its own tickbox - is ticked; clear it otherwise.
@@ -148,6 +167,10 @@ class SpecificationStepMixin:
             tickable = [var_name for var_name, _label in fields if var_name in SPECIFICATION_TICKABLE_FIELDS]
             if tickable and not any(self.specification_field_enabled_vars[v].get() for v in tickable):
                 messagebox.showerror("Missing info", f"Tick at least one strength for {title}.")
+                return False
+            conflict = self._specification_exclusive_conflict() if tickable else None
+            if conflict:
+                messagebox.showerror("Check the Specification", conflict)
                 return False
             for var_name, label_text in fields:
                 if not self._field_is_active(title, var_name):

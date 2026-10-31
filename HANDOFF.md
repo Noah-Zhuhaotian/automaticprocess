@@ -333,6 +333,11 @@ the D: drive were cleaned up.
 
 ## 9. Recent history (newest first)
 
+Specification: Foundations Plain/Fibre made mutually exclusive
+(`SPECIFICATION_EXCLUSIVE_FIELDS`); ticking one unticks/clears the other.
+Older saves/templates with both ticked are caught by the Specification
+step's and the batch Jobs step's validation. Released as `v1.0.4`.
+
 `v1.0.3`: installer sets `ChangesAssociations=yes` so Explorer refreshes
 shortcut icons after an upgrade (1.0.2 installs kept showing the cached old
 icon until `ie4uinit.exe -show` / Explorer restart). Release workflow skips
