@@ -300,11 +300,15 @@ Specifications.docx `Foundations:` now uses a space like the other strength
 lines (already in `7ec22ed`); the old duplicate-job-number test folders on
 the D: drive were cleaned up.
 
-1. **First release with the updater (`v1.0.1`) not published yet.** The
-   user needs `gh` installed and signed in, then runs `release.ps1`
-   (build_scripts/README). The real end-to-end upgrade (download → UAC →
-   silent install → app reopens) can only be tested once two releases with
-   the updater exist (1.0.1 installed, 1.0.2 published). The zip/PDF for
+1. **`v1.0.1` is published** (first release with the updater; Setup.exe +
+   zip). Office PCs on 1.0.0 need it installed by hand once. `gh` isn't
+   installed on the dev PC yet, so v1.0.1 was published through the GitHub
+   REST API with git's stored credential; for the next one, install `gh`
+   (`winget install GitHub.cli`, `gh auth login`) and use `release.ps1`.
+   Release notes are shown as plain text in the update prompt - no
+   Markdown (`**` shows literally). The real end-to-end upgrade (download
+   → UAC → silent install → app reopens) is untested until 1.0.2 is
+   published and a 1.0.1 install upgrades to it. The zip/PDF for
    manual installs: `AutomaticProcess-v<version>.zip` = Setup.exe +
    `USER_GUIDE.pdf`; the PDF is made ad hoc (Markdown → styled HTML with
    `python-markdown` → headless Edge `msedge --headless --print-to-pdf`) and

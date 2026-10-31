@@ -33,7 +33,8 @@ shortcut, proper "Apps & features" uninstall entry).
    version) and runs `gh release create v<version>` with
    `AutomaticProcess-Setup.exe` attached. That asset name is what the app
    looks for (`updater.SETUP_ASSET_NAME`) - don't rename it. `-Notes` is
-   shown to users in the "Update available" prompt.
+   shown to users in the "Update available" prompt as plain text - write
+   it for them and don't use Markdown.
 
 ## Build only
 
