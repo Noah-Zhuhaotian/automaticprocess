@@ -14,7 +14,9 @@ history of earlier sessions was retired from this file - it's in git
   `requests`, `pyinstaller` (build only). Run with `python main.py`.
 - Packaged as an installer: PyInstaller onedir → Inno Setup
   `AutomaticProcess-Setup.exe` (`build_scripts/`, see its README), published
-  as a GitHub release by `build_scripts/release.ps1`. Users upgrade with the
+  as a GitHub release by GitHub Actions (`.github/workflows/release.yml`,
+  started by pushing tag `v<version>`; see build_scripts/README). Never
+  publish from the dev PC. Users upgrade with the
   in-app "Check for updates" button (section 6a). Version lives only in
   `app/version.py`; bump it for every release.
 - Built for one engineering office (Christchurch, NZ) by one user, who
@@ -264,7 +266,8 @@ nested under the resource name (`{"project": {...}}`).
   the app has closed (Inno's loader elevates itself); the user just reopens it.
 - Running from source (`not sys.frozen`) only reports the new version.
 - `installer.iss` refuses to compile without `/DMyAppVersion` so the
-  installer and `app/version.py` can't drift; `release.ps1` passes it.
+  installer and `app/version.py` can't drift; the release workflow passes
+  it, and fails if the pushed tag isn't `v` + `__version__`.
 - Machines still on 1.0.0 have no button - they need one manual install.
 
 ## 7. Testing - how changes have been verified
@@ -313,20 +316,13 @@ Specifications.docx `Foundations:` now uses a space like the other strength
 lines (already in `7ec22ed`); the old duplicate-job-number test folders on
 the D: drive were cleaned up.
 
-1. **`v1.0.1` is published** (first release with the updater; Setup.exe +
-   zip). Office PCs on 1.0.0 need it installed by hand once. `gh` isn't
-   installed on the dev PC yet, so v1.0.1 was published through the GitHub
-   REST API with git's stored credential; for the next one, install `gh`
-   (`winget install GitHub.cli`, `gh auth login`) and use `release.ps1`.
-   Release notes are shown as plain text in the update prompt - no
-   Markdown (`**` shows literally). The real end-to-end upgrade (download
-   → UAC → silent install → app reopens) is untested until 1.0.2 is
-   published and a 1.0.1 install upgrades to it. The zip/PDF for
-   manual installs: `AutomaticProcess-v<version>.zip` = Setup.exe +
-   `USER_GUIDE.pdf`; the PDF is made ad hoc (Markdown → styled HTML with
-   `python-markdown` → headless Edge `msedge --headless --print-to-pdf`) and
-   dropped into `build_scripts/output/` before `release.ps1`. No script for
-   the PDF exists yet.
+1. **Releases**: `v1.0.1` (first with the updater) was published by hand
+   via the GitHub API; from `v1.0.2` on, the release workflow does it.
+   Office PCs on 1.0.0 need one manual install. Release notes (tag
+   message) are shown as plain text in the update prompt - no Markdown
+   (`**` shows literally). The real end-to-end upgrade (download → UAC →
+   silent install → app reopens) is untested until a 1.0.1 install
+   upgrades to 1.0.2.
 2. Saved projects/templates are single-PC; a shared location (a Settings
    path on the NAS) was discussed as a later step if the user needs it.
 3. No automated tests - the scripts described in section 7 would be a good
@@ -337,13 +333,21 @@ the D: drive were cleaned up.
 
 ## 9. Recent history (newest first)
 
+Releases moved to GitHub Actions (`.github/workflows/release.yml`;
+`release.ps1` removed); the user guide PDF is now a script
+(`build_scripts/make_user_guide_pdf.py`).
+
+New app icon drawn by `build_scripts/make_icon.py` (replaces the old
+photo-based one; `resources/automation.png` removed). Also set as the
+window/dialog title-bar icon (`APP_ICON`, bundled by the spec).
+
 QA / Safety in Design Excel workbook added as the 7th document
 (`excel_filler.py`, openpyxl added to requirements). Verified with a
 headless "both" Create (temp drives, MinuteDock stubbed) + reading the
-cells back + real Excel showing `07/03/26`. Released as `v1.0.2`.
+cells back + real Excel showing `07/03/26`. Shipped in `v1.0.2`.
 
 Self-update (section 6a): "Check for updates" button, `app/version.py`
-(1.0.1), `release.ps1`, installer version passed in. Verified: version
+(1.0.1), installer version passed in. Verified: version
 compare, real GitHub check (read-only), real download + digest check,
 headless GUI flows (no update / offline / from source / declined /
 install / UAC cancelled) with the network and installer stubbed, local

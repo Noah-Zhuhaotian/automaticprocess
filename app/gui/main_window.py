@@ -62,6 +62,7 @@ from tkinter import ttk
 from typing import Any
 
 from app.config.settings import load_settings
+from app.gui.constants import APP_ICON
 from app.gui.project_state import ProjectStateMixin
 from app.gui.steps.b2_letter_step import B2LetterStepMixin
 from app.gui.steps.batch_step import BatchStepMixin
@@ -103,6 +104,9 @@ class MainWindow(
     def __init__(self) -> None:
         super().__init__()
         self.title(f"Automatic Process Assistant {__version__}")
+        if APP_ICON.exists():
+            # default= also applies it to every dialog (Toplevel).
+            self.iconbitmap(default=str(APP_ICON))
         self.geometry("760x620")
         self.resizable(True, True)
 

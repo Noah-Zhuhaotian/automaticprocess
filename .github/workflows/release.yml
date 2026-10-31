@@ -1,0 +1,99 @@
+# Build the installer on GitHub's Windows runner and publish it as a GitHub
+# release - the release the app's "Check for updates" button installs.
+#
+# Two ways to start it (bump __version__ in app/version.py, commit, push first):
+#   - push a tag:  git tag -a v1.0.3 -m "Notes for users" ; git push origin v1.0.3
+#     (the tag must be "v" + __version__; its message becomes the notes)
+#   - GitHub website: Actions -> Release -> Run workflow, type the notes
+#     (the tag is created from __version__ on the chosen branch)
+# Notes are shown as plain text in the app's "Update available" prompt -
+# no Markdown.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "What changed, for users (plain text)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version, tag and notes
+        id: meta
+        env:
+          INPUT_NOTES: ${{ github.event.inputs.notes }}
+        run: |
+          $match = Select-String -Path app/version.py -Pattern '__version__\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"'
+          if (-not $match) { throw "Couldn't read __version__ from app/version.py" }
+          $version = $match.Matches[0].Groups[1].Value
+          $tag = "v$version"
+          if ("${{ github.event_name }}" -eq "push") {
+            if ($env:GITHUB_REF_NAME -ne $tag) { throw "Tag $env:GITHUB_REF_NAME doesn't match app/version.py ($tag) - bump __version__ or fix the tag." }
+            # checkout leaves the tag lightweight; fetch it again to read its message.
+            git fetch --force origin "refs/tags/${tag}:refs/tags/${tag}"
+            $notes = (git tag -l --format='%(contents)' $tag) -join "`n"
+          } else {
+            $notes = $env:INPUT_NOTES
+          }
+          if (-not $notes.Trim()) { $notes = "Version $version" }
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "Release $tag already exists - bump __version__ in app/version.py." }
+          $global:LASTEXITCODE = 0
+          Set-Content -Path release-notes.txt -Value $notes.Trim() -Encoding utf8
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt markdown
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup --no-progress -y }
+
+      - name: Build app (PyInstaller)
+        run: python -m PyInstaller --noconfirm build_scripts/automaticprocess.spec
+
+      - name: Build installer (Inno Setup)
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyAppVersion=${{ steps.meta.outputs.version }}" build_scripts/installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+
+      - name: User guide PDF and zip
+        # Nice to have - a failure here still publishes Setup.exe.
+        continue-on-error: true
+        run: |
+          python build_scripts/make_user_guide_pdf.py
+          if ($LASTEXITCODE -ne 0) { throw "PDF failed" }
+          Compress-Archive -Path build_scripts/output/AutomaticProcess-Setup.exe, build_scripts/output/USER_GUIDE.pdf `
+            -DestinationPath "build_scripts/output/AutomaticProcess-${{ steps.meta.outputs.tag }}.zip"
+
+      - name: Publish release
+        run: |
+          $tag = "${{ steps.meta.outputs.tag }}"
+          # The app looks for exactly this asset name (app/core/updater.py SETUP_ASSET_NAME).
+          $assets = @("build_scripts/output/AutomaticProcess-Setup.exe")
+          $zip = "build_scripts/output/AutomaticProcess-$tag.zip"
+          if (Test-Path $zip) { $assets += $zip }
+          gh release create $tag @assets --target $env:GITHUB_SHA --title $tag --notes-file release-notes.txt
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }

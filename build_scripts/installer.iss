@@ -2,7 +2,7 @@
 ; into a single Setup.exe installer: Start Menu shortcut, optional desktop
 ; shortcut, proper "Apps & features" uninstall entry.
 ;
-; Build: build_scripts/release.ps1 (or by hand, from the repo root):
+; Build: .github/workflows/release.yml (or by hand, from the repo root):
 ;   1. pyinstaller build_scripts/automaticprocess.spec   (produces dist/AutomaticProcess/)
 ;   2. "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" /DMyAppVersion=x.y.z build_scripts/installer.iss
 ;      with x.y.z = app/version.py's __version__
@@ -17,7 +17,7 @@
 ; the second [Run] entry reopens the app after such a silent upgrade.
 
 #ifndef MyAppVersion
-  #error Pass the version: ISCC /DMyAppVersion=x.y.z (app/version.py) - build_scripts/release.ps1 does this
+  #error Pass the version: ISCC /DMyAppVersion=x.y.z (app/version.py) - the release workflow does this
 #endif
 #define MyAppName "Automatic Process Assistant"
 #define MyAppExeName "AutomaticProcess.exe"

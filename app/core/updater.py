@@ -7,7 +7,7 @@ app/gui/update_check.py.
   no token; GitHub allows 60 unauthenticated calls/hour per IP, plenty for
   a manual "Check for updates" button). A release is an update when its
   tag ("v1.2.3") is newer than app/version.py's __version__ and it has an
-  asset named SETUP_ASSET_NAME (build_scripts/release.ps1 uploads it).
+  asset named SETUP_ASSET_NAME (.github/workflows/release.yml uploads it).
 - download_installer(): streams that asset to %TEMP%, checks its size and,
   when GitHub reports one, its SHA-256 digest.
 - launch_installer(): starts it silently via ShellExecute (os.startfile) -

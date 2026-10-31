@@ -66,7 +66,8 @@ app/
         review_step (Create orchestration + worker), review_summary
 
 resources/templates/           # the six Word templates + the QA / SiD Excel workbook
-build_scripts/                 # PyInstaller spec, Inno Setup script, release.ps1 (see its README)
+build_scripts/                 # PyInstaller spec, Inno Setup script, icon + PDF scripts (see its README)
+.github/workflows/release.yml  # builds + publishes a GitHub release (tag v<version>)
 USER_GUIDE.md / HANDOFF.md
 ```
 
@@ -123,7 +124,7 @@ verified (headless `MainWindow` scripts) and the gotchas to follow.
 ## Packaging
 
 `AutomaticProcess-Setup.exe` via PyInstaller + Inno Setup, published as a
-GitHub release by `build_scripts/release.ps1` - see
+GitHub release by GitHub Actions (`.github/workflows/release.yml`) - see
 [build_scripts/README.md](build_scripts/README.md). The app's "Check for
 updates" button installs the latest release. User data lives in
 `%APPDATA%\AutomaticProcess` and is never touched by install/update/uninstall.

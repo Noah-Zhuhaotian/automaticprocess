@@ -28,7 +28,11 @@ a = Analysis(
     # from __file__ - PyInstaller keeps that layout intact under the
     # onedir root, so no code changes were needed for template lookup to
     # keep working in the packaged build.
-    datas=[(str(ROOT / "resources" / "templates"), "resources/templates")],
+    datas=[
+        (str(ROOT / "resources" / "templates"), "resources/templates"),
+        # Also loaded at runtime for the window's title-bar icon.
+        (str(ROOT / "resources" / "app_icon.ico"), "resources"),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

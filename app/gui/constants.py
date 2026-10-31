@@ -98,6 +98,8 @@ LABEL_WIDTH = 20
 
 # Templates live in the repo (versioned), not in per-machine settings.
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "resources" / "templates"
+# Window/title-bar icon (also the exe/installer icon - see build_scripts/make_icon.py).
+APP_ICON = TEMPLATES_DIR.parent / "app_icon.ico"
 PROJECT_REGISTER_TEMPLATE = TEMPLATES_DIR / "Project register.docx"
 PS1_TEMPLATE = TEMPLATES_DIR / "PS1 Producer Statement.docx"
 LBP_TEMPLATE = TEMPLATES_DIR / "LBP form.docx"
