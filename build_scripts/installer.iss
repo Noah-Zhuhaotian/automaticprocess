@@ -29,6 +29,9 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 VersionInfoVersion={#MyAppVersion}
 CloseApplications=force
+; Makes Setup notify Explorer (SHCNE_ASSOCCHANGED) when done, so shortcuts
+; pick up a changed app icon instead of showing Windows' cached old one.
+ChangesAssociations=yes
 DefaultDirName={autopf}\AutomaticProcess
 DefaultGroupName=Automatic Process Assistant
 DisableProgramGroupPage=yes

@@ -333,6 +333,11 @@ the D: drive were cleaned up.
 
 ## 9. Recent history (newest first)
 
+`v1.0.3`: installer sets `ChangesAssociations=yes` so Explorer refreshes
+shortcut icons after an upgrade (1.0.2 installs kept showing the cached old
+icon until `ie4uinit.exe -show` / Explorer restart). Release workflow skips
+docs-only releases (see build_scripts/README).
+
 Releases moved to GitHub Actions (`.github/workflows/release.yml`;
 `release.ps1` removed); the user guide PDF is now a script
 (`build_scripts/make_user_guide_pdf.py`).

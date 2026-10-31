@@ -31,7 +31,10 @@ published from a local machine.
    version), makes `USER_GUIDE.pdf` (`make_user_guide_pdf.py`) and the zip,
    and publishes release `v<version>` with `AutomaticProcess-Setup.exe` +
    `AutomaticProcess-v<version>.zip`. It fails if the release already
-   exists or the tag doesn't match the version. Progress/errors: the
+   exists or the tag doesn't match the version. If only documentation
+   changed since the last release (`*.md` other than `USER_GUIDE.md`, plus
+   the version bump), it publishes nothing and deletes the pushed tag.
+   Ordinary pushes to `main` never run it. Progress/errors: the
    repository's Actions tab.
 
 `AutomaticProcess-Setup.exe` is the asset name the app looks for
