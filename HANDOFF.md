@@ -21,7 +21,8 @@ history of earlier sessions was retired from this file - it's in git
   communicates in **Chinese** but wants **all code, comments and UI text
   in English**. Reply to them in Chinese.
 - A wizard collects a job's details and then: creates project folders on 3
-  drives, fills 6 Word templates, and creates the job in **MinuteDock**
+  drives, fills 6 Word templates + 1 Excel workbook (QA / Safety in Design),
+  and creates the job in **MinuteDock**
   (timesheet SaaS, REST API).
 - Repo: https://github.com/Noah-Zhuhaotian/automaticprocess (`main`).
   Commit/push only when the user asks; they decide when to package.
@@ -91,6 +92,7 @@ app/core/            (no tkinter - safe to call from the Create worker thread)
                       find_job_number_conflicts, list_available_project_folders,
                       create_project_folders (3 drives + 6 ENGINEER_SUBFOLDERS)
   word_filler.py      fill_docx_template(...) - the Word engine (section 5)
+  excel_filler.py     fill_xlsx_template(...) - fixed cells, openpyxl (section 5)
   minutedock_client.py thin API wrapper: list_contacts, list_projects,
                       find_project_by_short_code (active then archived),
                       find_or_create_contact/project, update_project (PUT),
@@ -208,6 +210,17 @@ Hard-won rules:
   moves old documents aside first (`_archive_existing_documents`,
   all-or-nothing with rollback).
 
+**Excel** (`excel_filler.fill_xlsx_template`, the QA / Safety in Design
+workbook): no tokens - values go into fixed cells (`QA_*`/`SID_*` in
+constants.py), a documents-list entry with `xlsx_cells` goes to
+excel_filler instead of word_filler. Cell styles and the sheets' drop-down
+data validations survive openpyxl. Excel doesn't re-fit a fixed row height,
+so a multi-line value grows its row (`_fit_row_height`). Dates are written
+as real dates with a number format (`dd/mm/yy`) and left-aligned. Also never
+overwrites; it's in `DOCUMENT_OUTPUTS`, so regeneration archives it too.
+Checked by reading the cells back and in real Excel (displayed text +
+`CopyPicture` screenshot via COM).
+
 ## 6. MinuteDock
 
 Docs: https://developers.minutedock.com (OpenAPI). Base
@@ -323,6 +336,11 @@ the D: drive were cleaned up.
    strength line.
 
 ## 9. Recent history (newest first)
+
+QA / Safety in Design Excel workbook added as the 7th document
+(`excel_filler.py`, openpyxl added to requirements). Verified with a
+headless "both" Create (temp drives, MinuteDock stubbed) + reading the
+cells back + real Excel showing `07/03/26`. Released as `v1.0.2`.
 
 Self-update (section 6a): "Check for updates" button, `app/version.py`
 (1.0.1), `release.ps1`, installer version passed in. Verified: version

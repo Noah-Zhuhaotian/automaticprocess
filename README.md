@@ -9,7 +9,8 @@ then **Create**:
    Drafting / Admin), named `"{job number} - {street}"`
 2. Fills six Word templates (Project register, PS1 Producer Statement, LBP
    form, Calculation Statement, Specifications, B2 Letter) - real Word
-   checkboxes, genuine bulleted lists, user-selected sections/table rows
+   checkboxes, genuine bulleted lists, user-selected sections/table rows -
+   plus the QA / Safety in Design Excel workbook (scope, project, date)
 3. Creates the matching Contact and Project in
    [MinuteDock](https://minutedock.com) via its REST API
 
@@ -47,6 +48,7 @@ app/
 ├── core/                      # no tkinter - safe on the Create worker thread
 │   ├── folder_creator.py      # folder naming/parsing, job-number uniqueness, creation
 │   ├── word_filler.py         # Word template filling engine
+│   ├── excel_filler.py        # Excel template filling (fixed cells, openpyxl)
 │   ├── minutedock_client.py   # thin MinuteDock REST wrapper
 │   ├── web_filler.py          # MinuteDock business logic (find-or-create, budget update)
 │   ├── project_store.py       # saved wizard input per job  (%APPDATA%\...\projects\<job>.json)
@@ -63,7 +65,7 @@ app/
         specification_step, b2_letter_step, minutedock_step,
         review_step (Create orchestration + worker), review_summary
 
-resources/templates/           # the six Word templates
+resources/templates/           # the six Word templates + the QA / SiD Excel workbook
 build_scripts/                 # PyInstaller spec, Inno Setup script, release.ps1 (see its README)
 USER_GUIDE.md / HANDOFF.md
 ```
@@ -82,6 +84,12 @@ USER_GUIDE.md / HANDOFF.md
   (unticked lines deleted via `remove_paragraphs_with_tokens`; the
   Foundations line is built as `{{foundation_strengths}}`).
 - **B2 Letter.docx** - text tokens; material rows selected.
+- **Engsolution_Post_Interactive_QA_and_SiD_Simple.xlsx** (`excel_filler.py`,
+  openpyxl; output keeps this name, in `06 Consent Document`) - no tokens,
+  fixed cells (`QA_*`/`SID_*` in constants.py): QA Process `B5` = "Scope" +
+  one ` - line` per scope bullet (row height grown to fit); Safety in Design
+  `B4` = project folder name, `B5` = the PS1 date as a real date shown
+  `dd/mm/yy`.
 
 `word_filler.fill_docx_template` copies the template, does structural cuts
 first (sections, paragraphs, table rows, reorder, dynamic rows), then token

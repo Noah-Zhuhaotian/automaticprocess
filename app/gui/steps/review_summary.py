@@ -142,7 +142,7 @@ class ReviewSummaryMixin:
                     ),
                 )
             )
-            rows.append(("Each job", "Folders on all three drives + all six documents + its MinuteDock project"))
+            rows.append(("Each job", "Folders on all three drives + all seven documents + its MinuteDock project"))
             return "Create", rows
         if self.template_choice_var.get() != NO_TEMPLATE and self._applied_template:
             rows.append(("Started from template", self._applied_template))
@@ -179,7 +179,7 @@ class ReviewSummaryMixin:
                 (
                     "Documents",
                     "Project register, PS1 Producer Statement, LBP form, Calculation Statement, "
-                    "Specifications, B2 Letter",
+                    "Specifications, B2 Letter, QA / Safety in Design (Excel)",
                 )
             )
         return "Create", rows

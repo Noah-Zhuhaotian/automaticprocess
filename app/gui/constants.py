@@ -104,6 +104,19 @@ LBP_TEMPLATE = TEMPLATES_DIR / "LBP form.docx"
 CALCULATION_STATEMENT_TEMPLATE = TEMPLATES_DIR / "Calculation Statement.docx"
 SPECIFICATION_TEMPLATE = TEMPLATES_DIR / "Specifications.docx"
 B2_LETTER_TEMPLATE = TEMPLATES_DIR / "B2 Letter.docx"
+QA_SID_TEMPLATE = TEMPLATES_DIR / "Engsolution_Post_Interactive_QA_and_SiD_Simple.xlsx"
+
+# Cells filled in the QA / Safety in Design workbook (excel_filler): the
+# scope goes into the QA Process sheet's "Scope" row, under the "Scope"
+# label, as " - item" lines (the sheet's own list style); the Safety in
+# Design sheet gets the project name (= folder name) and the PS1 date.
+QA_SHEET = "QA Process"
+QA_SCOPE_CELL = "B5"
+QA_SCOPE_LABEL = "Scope"
+SID_SHEET = "Safety in Design"
+SID_PROJECT_CELL = "B4"
+SID_DATE_CELL = "B5"
+SID_DATE_FORMAT = "dd/mm/yy"
 
 # Row labels (first cell) in B2 Letter.docx's Material/Means of
 # Compliance/Notes table, in document order - must match that document's

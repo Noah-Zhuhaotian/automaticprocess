@@ -281,14 +281,17 @@ class Ps1StepMixin:
         self._refresh_day_options()
         self.date_day_var.set(str(today.day))
 
-    def _format_selected_date(self) -> str:
+    def _selected_date(self) -> datetime.date | None:
         year_str = self.date_year_var.get()
         month_name = self.date_month_var.get()
         day_str = self.date_day_var.get()
         if not (year_str.isdigit() and len(year_str) == 4 and month_name in MONTH_NAMES and day_str.isdigit()):
-            return ""
-        date_value = datetime.date(int(year_str), MONTH_NAMES.index(month_name) + 1, int(day_str))
-        return _format_ordinal_date(date_value)
+            return None
+        return datetime.date(int(year_str), MONTH_NAMES.index(month_name) + 1, int(day_str))
+
+    def _format_selected_date(self) -> str:
+        date_value = self._selected_date()
+        return _format_ordinal_date(date_value) if date_value is not None else ""
 
     def _on_compliance_alt_change(self) -> None:
         b1_state = "normal" if self.compliance_var.get() else "disabled"

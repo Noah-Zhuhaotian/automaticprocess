@@ -16,8 +16,9 @@ build_scripts/output/
 app/config/user_settings.json
 logs/
 
-# Word lock files (created while a template is open for editing)
+# Word/Excel lock files (created while a template is open for editing)
 ~$*.docx
+~$*.xlsx
 
 # IDE
 .vscode/

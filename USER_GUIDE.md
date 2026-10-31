@@ -7,7 +7,7 @@ This guide is for everyday users - no code or technical background needed, just 
 You fill in one step-by-step form, and the software does the repetitive project setup for you:
 
 1. **Creates the project folders** - one folder on each of the Engineer, Drafting and Admin drives, named "job number - street" (e.g. "23432 - 217 Armagh Street"). The Engineer folder also gets 6 fixed subfolders (01 Architectural ... 06 Consent Document).
-2. **Fills in the Word documents** - six documents (Project register, PS1 Producer Statement, LBP form, Calculation Statement, Specifications, B2 Letter) are generated from what you entered.
+2. **Fills in the documents** - six Word documents (Project register, PS1 Producer Statement, LBP form, Calculation Statement, Specifications, B2 Letter) and the QA / Safety in Design Excel workbook are generated from what you entered. The Excel workbook gets the scope (QA Process sheet), and the project name and date in dd/mm/yy (Safety in Design sheet); it's saved in "06 Consent Document".
 3. **Sets the project up in MinuteDock** - the client (Contact) and the project are created in MinuteDock, so time can be logged against it.
 
 You choose at the start whether to do all three, only create the folders, or come back later to fill in the documents. You can also save your usual settings as a **template**, and create several jobs at once from a template.
@@ -61,7 +61,7 @@ Every project starts on the **Create mode** page. Pick one:
 |---|---|
 | **Create project folders only** | Makes the folders and the MinuteDock project - no documents. Use this to set a job up now and do the paperwork later. |
 | **Open an existing project (fill or regenerate its documents)** | Pick an existing project folder, then fill in (or change) its details and generate its documents. |
-| **Create folders and documents together (normal)** | Everything at once - folders, the six documents, and MinuteDock. |
+| **Create folders and documents together (normal)** | Everything at once - folders, the seven documents, and MinuteDock. |
 | **Create several jobs from a template** | Create many jobs in one go - you only type each job's number, client and address. See "Creating several jobs at once" below. |
 
 **Start from template** (for "folders only", "normal" and "several jobs"): pick a saved template and every page except General is filled in for you. You can still change anything on any page. Choose "(none)" to start blank. See "Templates" below.
@@ -164,7 +164,7 @@ A template stores everything **except** the General page (job number, client, ad
 3. Click Next - the app checks the date and every row (missing fields, the same job number twice in the table, or a job number that's already used).
 4. Review & Create lists all the jobs (new clients are marked "new, added to MinuteDock on Create"), the date, and the template's settings. Click **Create all**.
 
-Each job is created completely (folders, the six documents with the date you chose, MinuteDock - including any new clients) one after another - the progress window shows which one it's on. If one job fails, the others still go ahead. At the end you get a list:
+Each job is created completely (folders, the seven documents with the date you chose, MinuteDock - including any new clients) one after another - the progress window shows which one it's on. If one job fails, the others still go ahead. At the end you get a list:
 
 - **OK** - created.
 - **PARTIAL** - folders/documents were created but something else failed (e.g. MinuteDock) - fix it later with **Open an existing project**.

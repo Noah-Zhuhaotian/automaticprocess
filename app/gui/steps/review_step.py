@@ -1,7 +1,8 @@
 """Step: Review & Create - single Create button that builds the shared
 replacements dict and generates everything for the current project:
 project folders plus the Project register, PS1, LBP form, Calculation
-Statement, Specifications, and B2 Letter documents, then syncs the
+Statement, Specifications, and B2 Letter documents and the QA / Safety in
+Design workbook (Excel, via excel_filler), then syncs the
 matching Contact/Project to MinuteDock. What actually runs depends on the
 Create-mode choice from mode_step.py ("folder_only" skips documents but
 still creates the MinuteDock Project; "documents_only" skips folder
@@ -20,7 +21,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any
 
-from app.core import folder_creator, project_store, web_filler, word_filler
+from app.core import excel_filler, folder_creator, project_store, web_filler, word_filler
 from app.core.minutedock_client import MinuteDockError
 from app.gui.constants import (
     ALTERNATIVE_SOLUTION_TEXT,
@@ -37,7 +38,15 @@ from app.gui.constants import (
     PROJECT_REGISTER_TEMPLATE,
     PS1_INSPECTION_TABLE_INDEX,
     PS1_TEMPLATE,
+    QA_SCOPE_CELL,
+    QA_SCOPE_LABEL,
+    QA_SHEET,
+    QA_SID_TEMPLATE,
     SCOPE_ITEMS,
+    SID_DATE_CELL,
+    SID_DATE_FORMAT,
+    SID_PROJECT_CELL,
+    SID_SHEET,
     SPECIFICATION_SECTIONS,
     SPECIFICATION_TEMPLATE,
     UNCHECKED,
@@ -59,6 +68,7 @@ DOCUMENT_OUTPUTS = [
     Path("06 Consent Document") / "Calculation Statement.docx",
     Path("06 Consent Document") / "Specifications.docx",
     Path("06 Consent Document") / "B2 Letter.docx",
+    Path("06 Consent Document") / QA_SID_TEMPLATE.name,
 ]
 
 
@@ -94,7 +104,8 @@ class ReviewStepMixin:
     def _build_review_step(self, parent: ttk.Frame) -> None:
         mode = self.create_mode_var.get()
         documents = (
-            "the Project register, PS1, LBP form, Calculation Statement, Specifications, and B2 Letter documents"
+            "the Project register, PS1, LBP form, Calculation Statement, Specifications, B2 Letter and "
+            "QA / Safety in Design documents"
         )
         if mode == "folder_only":
             text = (
@@ -423,6 +434,12 @@ class ReviewStepMixin:
                 "output": DOCUMENT_OUTPUTS[5],
                 "keep_table_rows": {0: b2_letter_materials},
             },
+            {
+                "template": QA_SID_TEMPLATE,
+                "output": DOCUMENT_OUTPUTS[6],
+                "xlsx_cells": self._build_qa_sid_cells(bullet_lists["scope"]),
+                "xlsx_number_formats": {SID_SHEET: {SID_DATE_CELL: SID_DATE_FORMAT}},
+            },
         ]
 
         # MinuteDock sync is a required part of Create - Settings validation
@@ -457,6 +474,18 @@ class ReviewStepMixin:
             "minutedock_budget_changed": self._minutedock_budget_changed(minutedock_args["budget_dollars"]),
         }
         return job
+
+    def _build_qa_sid_cells(self, scope_lines: list[str]) -> dict[str, dict[str, Any]]:
+        """The QA / Safety in Design workbook's cells: the same scope lines
+        as {{scope}}, the project (folder) name, and the PS1 date (a real
+        date, shown dd/mm/yy; empty if none was picked)."""
+        scope = "\n".join([QA_SCOPE_LABEL, *(f" - {line}" for line in scope_lines)])
+        project_name = folder_creator.build_project_folder_name(self.job_number_var.get(), self.street_var.get())
+        date_value = self._selected_date()
+        return {
+            QA_SHEET: {QA_SCOPE_CELL: scope},
+            SID_SHEET: {SID_PROJECT_CELL: project_name, SID_DATE_CELL: date_value if date_value is not None else ""},
+        }
 
     def _minutedock_budget_changed(self, budget_dollars: str | None) -> bool:
         """Whether the MinuteDock step's budget differs from the existing
@@ -591,6 +620,15 @@ class ReviewStepMixin:
                 logger.info("Template not found at %s, skipping", template_path)
                 continue
             try:
+                if "xlsx_cells" in doc:
+                    output_path = excel_filler.fill_xlsx_template(
+                        str(template_path),
+                        str(created["engineer"] / relative_output),
+                        doc["xlsx_cells"],
+                        doc.get("xlsx_number_formats"),
+                    )
+                    summary += f"\n{relative_output}: {output_path}"
+                    continue
                 output_path = word_filler.fill_docx_template(
                     str(template_path),
                     str(created["engineer"] / relative_output),
