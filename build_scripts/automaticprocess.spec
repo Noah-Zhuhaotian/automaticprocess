@@ -33,7 +33,9 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # openpyxl imports numpy/pandas if they're installed but doesn't need
+    # them; bundling numpy alone added ~9 MB to the installer.
+    excludes=["numpy", "pandas"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
