@@ -100,7 +100,8 @@ app/config/settings.py  DEFAULT_SETTINGS, load_settings/save_settings
 app/gui/
   main_window.py      MainWindow = all step mixins + tk.Tk; _init_vars,
                       _build_step_list (mode-dependent), _show_step (header),
-                      _go_back/_go_next (last step → _on_create)
+                      _go_back/_go_next (last step → _on_create),
+                      _build_scroll_area (see below)
   constants.py        SCOPE_ITEMS, B1_OPTIONS, INSPECTION_ITEMS,
                       SPECIFICATION_* tables, template paths, fixed texts
   project_state.py    ProjectStateMixin: _clear_project_fields /
@@ -129,6 +130,16 @@ a step shows current values); validation; `project_state.py` clear + collect
 `_init_vars`, add to `_build_step_list` (and `_document_steps()` if it's a
 document step - that also puts it into template editing), and a summary
 builder.
+
+**Window layout**: the Back/Next bar is packed `side="bottom"` *before* the
+content so it stays visible in a small window. Steps build into
+`self.content_frame`, which lives inside a Canvas (`_scroll_canvas`) that
+scrolls when the step doesn't fit; scrollbars show only when needed. The
+frame is stretched to at least the visible area (grid `minsize` on its
+holder `_scroll_body`), so `pack(fill="both", expand=True)` still fills the
+window (Jobs table, Review summary). The page-level `<MouseWheel>` is
+`bind_all`: it leaves the wheel to a Text/Listbox that can scroll, scrolls
+an inner Canvas that can scroll (batch Jobs), and ignores Comboboxes.
 
 ## 4. Create flow (threading)
 
@@ -276,6 +287,14 @@ the D: drive were cleaned up.
    strength line.
 
 ## 9. Recent history (newest first)
+
+Back/Next pinned to the bottom of the window and the step content made
+scrollable (`main_window._build_scroll_area`); verified headless at
+760x420 across every step.
+
+`9d6d37b`: batch Jobs step gets the PS1 date and "Add new client...";
+reopening a project whose documents were generated is an update run
+("Review & Update", "Update", "Changes" section).
 
 `7ec22ed` (one large commit): Create modes;
 MinuteDock Contact picker; job-number uniqueness (folders + MinuteDock,

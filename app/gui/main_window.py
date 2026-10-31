@@ -121,17 +121,89 @@ class MainWindow(
         ttk.Label(header_frame, textvariable=self.header_var, font=("Segoe UI", 12, "bold")).pack(side="left")
         ttk.Button(header_frame, text="Settings", command=self._open_settings_dialog).pack(side="right")
 
-        self.content_frame = ttk.Frame(self)
-        self.content_frame.pack(fill="both", expand=True, padx=16, pady=4)
-
+        # Packed before the content (side="bottom") so Back/Next keep their
+        # place when the window is too small - pack shrinks whatever is
+        # packed last first.
         nav_frame = ttk.Frame(self)
-        nav_frame.pack(fill="x", padx=16, pady=14)
+        nav_frame.pack(side="bottom", fill="x", padx=16, pady=14)
         self.back_button = ttk.Button(nav_frame, text="< Back", command=self._go_back)
         self.back_button.pack(side="left")
         self.next_button = ttk.Button(nav_frame, text="Next >", command=self._go_next)
         self.next_button.pack(side="right")
 
+        self._build_scroll_area()
+
         self._show_step(0)
+
+    # ---------- scrollable content area ----------
+    def _build_scroll_area(self) -> None:
+        """Steps build into self.content_frame, which sits inside a canvas
+        that scrolls when the window is smaller than the step. The frame is
+        stretched to at least the visible area (grid minsize on its holder),
+        so steps that fill the window (Jobs, Review) still do."""
+        area = ttk.Frame(self)
+        area.pack(fill="both", expand=True, padx=16, pady=4)
+        area.rowconfigure(0, weight=1)
+        area.columnconfigure(0, weight=1)
+
+        self._scroll_canvas = tk.Canvas(area, highlightthickness=0, borderwidth=0, yscrollincrement=20)
+        self._scroll_canvas.grid(row=0, column=0, sticky="nsew")
+        self._vscrollbar = ttk.Scrollbar(area, orient="vertical", command=self._scroll_canvas.yview)
+        self._vscrollbar.grid(row=0, column=1, sticky="ns")
+        self._hscrollbar = ttk.Scrollbar(area, orient="horizontal", command=self._scroll_canvas.xview)
+        self._hscrollbar.grid(row=1, column=0, sticky="ew")
+        self._scroll_canvas.configure(
+            yscrollcommand=self._vscrollbar.set, xscrollcommand=self._hscrollbar.set
+        )
+
+        self._scroll_body = ttk.Frame(self._scroll_canvas)
+        self._scroll_body.rowconfigure(0, weight=1)
+        self._scroll_body.columnconfigure(0, weight=1)
+        self._scroll_canvas.create_window((0, 0), window=self._scroll_body, anchor="nw")
+        self.content_frame = ttk.Frame(self._scroll_body)
+        self.content_frame.grid(row=0, column=0, sticky="nsew")
+
+        self._scroll_canvas.bind("<Configure>", self._on_scroll_canvas_configure)
+        self._scroll_body.bind("<Configure>", lambda event: self._update_scroll_area())
+        self.bind_all("<MouseWheel>", self._on_mousewheel)
+        self._update_scroll_area()
+
+    def _on_scroll_canvas_configure(self, event: tk.Event) -> None:
+        self._scroll_body.rowconfigure(0, minsize=event.height)
+        self._scroll_body.columnconfigure(0, minsize=event.width)
+        self._update_scroll_area()
+
+    def _update_scroll_area(self) -> None:
+        canvas = self._scroll_canvas
+        canvas.configure(scrollregion=(0, 0, self._scroll_body.winfo_reqwidth(), self._scroll_body.winfo_reqheight()))
+        # Scrollbars only when the step doesn't fit.
+        for scrollbar, needed in (
+            (self._vscrollbar, self._scroll_body.winfo_reqheight() > canvas.winfo_height()),
+            (self._hscrollbar, self._scroll_body.winfo_reqwidth() > canvas.winfo_width()),
+        ):
+            if needed:
+                scrollbar.grid()
+            else:
+                scrollbar.grid_remove()
+
+    def _on_mousewheel(self, event: tk.Event) -> None:
+        widget = event.widget
+        if isinstance(widget, str):  # e.g. a combobox's drop-down list
+            return
+        units = -event.delta // 120
+        # Widgets with their own scrolling keep the wheel while they can
+        # scroll; comboboxes use it to change their value.
+        while widget is not None and widget is not self._scroll_canvas:
+            if isinstance(widget, ttk.Combobox):
+                return
+            if isinstance(widget, (tk.Text, tk.Listbox)) and widget.yview() != (0.0, 1.0):
+                return
+            if isinstance(widget, tk.Canvas) and widget.yview() != (0.0, 1.0):
+                widget.yview_scroll(units, "units")
+                return
+            widget = widget.master
+        if widget is self._scroll_canvas and self._scroll_canvas.yview() != (0.0, 1.0):
+            self._scroll_canvas.yview_scroll(units, "units")
 
     # ---------- persistent variables (created once, reused across steps) ----------
     def _init_vars(self) -> None:
@@ -230,6 +302,8 @@ class MainWindow(
             header += f"  —  template: {self.editing_template_name}"
         self.header_var.set(header)
         step["build"](self.content_frame)
+        self._scroll_canvas.yview_moveto(0)
+        self._scroll_canvas.xview_moveto(0)
 
         self.back_button.configure(state="normal" if index > 0 else "disabled")
         if index == len(self.steps) - 1:
