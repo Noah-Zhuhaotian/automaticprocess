@@ -1,7 +1,8 @@
 """Step: Settings - drive paths (Engineer/Drafting/Admin) plus the
 MinuteDock Personal Access Token. Both are required - the app can't create
 a project without the drives, and MinuteDock sync is a mandatory part of
-Create now, not an optional add-on.
+Create now, not an optional add-on. Plus the optional shared data folder
+(see app/config/settings.py and app/core/shared_data.py).
 
 The first-run step (_build_settings_step) covers drives and the token and
 is only shown in the step list when any of them is still unconfigured; the
@@ -13,12 +14,19 @@ from __future__ import annotations
 
 import os
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from app.config.settings import save_settings
-from app.core import minutedock_client
+from app.config.settings import data_dir, save_settings
+from app.core import minutedock_client, shared_data
 from app.core.minutedock_client import MinuteDockError
 from app.gui.constants import DRIVE_KEYS
+
+SHARED_FOLDER_HELP = (
+    "Shared data folder (optional): a folder on the NAS that everyone using this app points at. "
+    "Saved projects, templates and the drop-down lists (councils, suburbs, towns, ...) are then "
+    "shared, so anyone can open and change them. Leave empty to keep them on this PC only."
+)
 
 
 class SettingsStepMixin:
@@ -27,6 +35,7 @@ class SettingsStepMixin:
         self.drafting_drive_var = tk.StringVar(value=self.settings.get("drafting_drive", ""))
         self.admin_drive_var = tk.StringVar(value=self.settings.get("admin_drive", ""))
         self.minutedock_token_var = tk.StringVar(value=self.settings.get("minutedock_access_token", ""))
+        self.shared_data_folder_var = tk.StringVar(value=self.settings.get("shared_data_folder", ""))
 
     def _settings_configured(self) -> bool:
         return all(self.settings.get(key, "").strip() for key in DRIVE_KEYS) and bool(
@@ -82,6 +91,21 @@ class SettingsStepMixin:
             row=token_row + 2, column=2, pady=4, padx=(0, 12)
         )
 
+        shared_row = token_row + 3
+        ttk.Separator(dialog, orient="horizontal").grid(
+            row=shared_row, column=0, columnspan=3, sticky="ew", padx=12, pady=(8, 8)
+        )
+        ttk.Label(dialog, text=SHARED_FOLDER_HELP, wraplength=420, justify="left").grid(
+            row=shared_row + 1, column=0, columnspan=3, sticky="w", padx=12, pady=(0, 6)
+        )
+        ttk.Label(dialog, text="Shared data folder:").grid(row=shared_row + 2, column=0, sticky="w", padx=12, pady=4)
+        ttk.Entry(dialog, textvariable=self.shared_data_folder_var, width=40).grid(
+            row=shared_row + 2, column=1, pady=4, padx=8
+        )
+        ttk.Button(
+            dialog, text="Browse...", command=lambda: self._browse_folder(self.shared_data_folder_var)
+        ).grid(row=shared_row + 2, column=2, pady=4, padx=(0, 12))
+
         def on_save() -> None:
             if self._save_settings():
                 dialog.destroy()
@@ -89,7 +113,7 @@ class SettingsStepMixin:
                 self._refresh_step_list_preserving_position()
 
         ttk.Button(dialog, text="Save", command=on_save).grid(
-            row=token_row + 3, column=2, sticky="e", padx=12, pady=12
+            row=shared_row + 3, column=2, sticky="e", padx=12, pady=12
         )
 
     def _refresh_step_list_preserving_position(self) -> None:
@@ -173,6 +197,19 @@ class SettingsStepMixin:
             row=token_row + 2, column=2, pady=4
         )
 
+        shared_row = token_row + 3
+        ttk.Separator(parent, orient="horizontal").grid(row=shared_row, column=0, columnspan=3, sticky="ew", pady=(8, 8))
+        ttk.Label(parent, text=SHARED_FOLDER_HELP, wraplength=560, justify="left").grid(
+            row=shared_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 6)
+        )
+        ttk.Label(parent, text="Shared data folder:").grid(row=shared_row + 2, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.shared_data_folder_var, width=45).grid(
+            row=shared_row + 2, column=1, pady=4, padx=8
+        )
+        ttk.Button(
+            parent, text="Browse...", command=lambda: self._browse_folder(self.shared_data_folder_var)
+        ).grid(row=shared_row + 2, column=2, pady=4)
+
     def _browse_folder(self, var: tk.StringVar) -> None:
         path = filedialog.askdirectory(initialdir=var.get() or None)
         if path:
@@ -211,11 +248,57 @@ class SettingsStepMixin:
                 return False
             seen[key] = label
 
+        shared = self.shared_data_folder_var.get().strip()
+        if shared:
+            shared_key = os.path.normcase(os.path.normpath(shared))
+            if shared_key in seen:
+                messagebox.showerror(
+                    "Shared data folder",
+                    f"The shared data folder can't be the {seen[shared_key]} drive itself - "
+                    "use a separate folder (e.g. a subfolder on the NAS).",
+                )
+                return False
+            if not os.path.isdir(shared):
+                messagebox.showerror(
+                    "Shared data folder",
+                    f"Can't reach this folder:\n{shared}\n\nCheck the path (and that the NAS is connected).",
+                )
+                return False
+
+        previous = self.settings.get("shared_data_folder", "").strip()
+        switching = bool(shared) and os.path.normcase(os.path.normpath(shared)) != os.path.normcase(
+            os.path.normpath(previous or ".")
+        )
+        copied: dict[str, int] = {}
+        if switching:
+            # Bring what's saved so far (here, or in the previous shared
+            # folder) along; the new folder's own files and list entries win.
+            try:
+                copied = shared_data.copy_saved_data(data_dir(), Path(shared))
+                self.settings.update(shared_data.merged_lists(Path(shared), self.settings))
+            except (OSError, ValueError) as exc:
+                messagebox.showerror("Shared data folder", f"Couldn't set up the shared data folder:\n{exc}")
+                return False
+
         self.settings["engineer_drive"] = engineer
         self.settings["drafting_drive"] = drafting
         self.settings["admin_drive"] = admin
         self.settings["minutedock_access_token"] = token
-        save_settings(self.settings)
+        self.settings["shared_data_folder"] = shared
+        try:
+            save_settings(self.settings)
+        except OSError as exc:
+            messagebox.showerror("Settings", f"Couldn't save the settings:\n{exc}")
+            return False
+
+        if switching:
+            messagebox.showinfo(
+                "Shared data folder",
+                f"Saved projects, templates and drop-down lists are now shared in:\n{shared}\n\n"
+                f"Copied from this PC: {copied.get('projects', 0)} saved project(s), "
+                f"{copied.get('templates', 0)} template(s) (ones already in the shared folder were kept), "
+                "and any drop-down list entries the shared folder didn't have yet.",
+            )
         return True
 
     def _validate_settings_step(self) -> bool:

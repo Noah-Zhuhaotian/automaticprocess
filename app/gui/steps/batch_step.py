@@ -21,6 +21,7 @@ from typing import Any
 from app.core import folder_creator, minutedock_client, project_store
 from app.core.minutedock_client import MinuteDockError
 from app.gui.constants import MONTH_NAMES
+from app.gui.steps.general_step import PLACE_LISTS
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -77,6 +78,10 @@ class BatchStepMixin:
         buttons.pack(anchor="w", pady=(8, 0))
         ttk.Button(buttons, text="Add job", command=self._add_batch_row).pack(side="left")
         ttk.Button(buttons, text="Add new client...", command=self._add_batch_client).pack(side="left", padx=(8, 0))
+        for kind in PLACE_LISTS:
+            ttk.Button(
+                buttons, text=f"Add {PLACE_LISTS[kind][1].lower()}...", command=lambda k=kind: self._add_batch_place(k)
+            ).pack(side="left", padx=(8, 0))
         self._batch_client_status = ttk.Label(buttons, foreground="green")
         self._batch_client_status.pack(side="left", padx=(12, 0))
         self._render_batch_rows()
@@ -117,15 +122,23 @@ class BatchStepMixin:
         for child in frame.winfo_children():
             child.destroy()
 
-        contact_names = self._batch_contact_names()
+        dropdown_values = {
+            "client_info": self._batch_contact_names(),
+            "suburb": self._saved_place_names("suburb"),
+            "town": self._saved_place_names("town"),
+        }
         ttk.Label(frame, text="#").grid(row=0, column=0, sticky="w")
         for col, (_key, label, _width) in enumerate(BATCH_FIELDS, start=1):
             ttk.Label(frame, text=label).grid(row=0, column=col, sticky="w", padx=2)
         for row_index, row in enumerate(self.batch_rows, start=1):
             ttk.Label(frame, text=str(row_index)).grid(row=row_index, column=0, sticky="w", pady=2)
             for col, (key, _label, width) in enumerate(BATCH_FIELDS, start=1):
-                if key == "client_info":
-                    widget = ttk.Combobox(frame, textvariable=row[key], values=contact_names, width=width)
+                if key in dropdown_values:
+                    widget = ttk.Combobox(frame, textvariable=row[key], values=dropdown_values[key], width=width)
+                    if key != "client_info":
+                        # Suburb/Town only from the lists (Add buttons below;
+                        # Edit is on the General step).
+                        widget.configure(state="readonly" if dropdown_values[key] else "disabled")
                 else:
                     widget = ttk.Entry(frame, textvariable=row[key], width=width)
                 widget.grid(row=row_index, column=col, sticky="w", padx=2, pady=2)
@@ -172,6 +185,11 @@ class BatchStepMixin:
             self._render_batch_rows()
         if status is not None and status.winfo_exists():
             status.configure(text=message)
+
+    def _add_batch_place(self, kind: str) -> None:
+        """Add a suburb/town to its list, offered in every row's dropdown."""
+        if self._ask_new_place_name(kind) is not None:
+            self._render_batch_rows()
 
     def _add_batch_row(self) -> None:
         self.batch_rows.append(self._new_batch_row())

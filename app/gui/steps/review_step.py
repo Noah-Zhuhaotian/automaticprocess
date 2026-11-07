@@ -1,8 +1,8 @@
 """Step: Review & Create - single Create button that builds the shared
 replacements dict and generates everything for the current project:
-project folders plus the Project register, PS1, LBP form, Calculation
-Statement, Specifications, and B2 Letter documents and the QA / Safety in
-Design workbook (Excel, via excel_filler), then syncs the
+project folders plus the PS1, LBP form, Specifications, and B2 Letter
+documents, the QA / Safety in Design workbook (Excel, via excel_filler) and
+the Calculation Statement (a fixed PDF, just copied), then syncs the
 matching Contact/Project to MinuteDock. What actually runs depends on the
 Create-mode choice from mode_step.py ("folder_only" skips documents but
 still creates the MinuteDock Project; "documents_only" skips folder
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import queue
+import shutil
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -35,7 +36,6 @@ from app.gui.constants import (
     INSPECTION_ITEM_LABELS,
     INSPECTION_OTHER_LABEL,
     LBP_TEMPLATE,
-    PROJECT_REGISTER_TEMPLATE,
     PS1_INSPECTION_TABLE_INDEX,
     PS1_TEMPLATE,
     QA_SCOPE_CELL,
@@ -62,13 +62,22 @@ PREVIOUS_VERSIONS_FOLDER = "_previous versions"
 # Where each generated document lands, relative to the Engineer project
 # folder (used as the "output" paths in _on_create's documents list).
 DOCUMENT_OUTPUTS = [
-    Path("Project register.docx"),
+    Path(QA_SID_TEMPLATE.name),
     Path("06 Consent Document") / "PS1 Producer Statement.docx",
     Path("06 Consent Document") / "LBP form.docx",
-    Path("06 Consent Document") / "Calculation Statement.docx",
+    Path("06 Consent Document") / CALCULATION_STATEMENT_TEMPLATE.name,
     Path("06 Consent Document") / "Specifications.docx",
     Path("06 Consent Document") / "B2 Letter.docx",
+]
+# Outputs of earlier versions that are no longer generated (the Project
+# register was dropped; the QA / SiD workbook used to go in "06 Consent
+# Document"; the Calculation Statement used to be a Word copy). Still
+# archived on regeneration so an old project isn't left with a stale copy
+# next to the new documents.
+LEGACY_DOCUMENT_OUTPUTS = [
+    Path("Project register.docx"),
     Path("06 Consent Document") / QA_SID_TEMPLATE.name,
+    Path("06 Consent Document") / "Calculation Statement.docx",
 ]
 
 
@@ -104,7 +113,7 @@ class ReviewStepMixin:
     def _build_review_step(self, parent: ttk.Frame) -> None:
         mode = self.create_mode_var.get()
         documents = (
-            "the Project register, PS1, LBP form, Calculation Statement, Specifications, B2 Letter and "
+            "the PS1, LBP form, Calculation Statement, Specifications, B2 Letter and "
             "QA / Safety in Design documents"
         )
         if mode == "folder_only":
@@ -123,7 +132,7 @@ class ReviewStepMixin:
                 minutedock = "This job has no MinuteDock project yet, so one is created."
             folder = self.existing_project_folder_var.get().strip()
             engineer = Path(self.settings.get("engineer_drive", "")) / folder
-            has_documents = any((engineer / doc).exists() for doc in DOCUMENT_OUTPUTS)
+            has_documents = any((engineer / doc).exists() for doc in DOCUMENT_OUTPUTS + LEGACY_DOCUMENT_OUTPUTS)
             regenerate = (
                 f' Its current documents will be moved to "{PREVIOUS_VERSIONS_FOLDER}" first (nothing is deleted).'
                 if has_documents
@@ -290,20 +299,23 @@ class ReviewStepMixin:
         b1_selected = [option for option in B1_OPTIONS if self.b1_vars[option].get()]
 
         street = self.street_var.get().strip()
+        suburb = self.suburb_var.get().strip()
+        town = self.town_var.get().strip()
         replacements = {
             "job_number": self.job_number_var.get().strip(),
             "client_info": self.client_info_var.get().strip(),
-            # "address" is the token name baked into the Project register/PS1
-            # templates; it's filled with the street only (see HANDOFF).
-            "address": street,
+            # "address" = the full "street, suburb, town": the PS1's "AT:" field
+            # and Schedule 2's report title, and the Specifications cover.
+            # The other documents use street/suburb/town separately.
+            "address": ", ".join(part for part in (street, suburb, town) if part),
             "street": street,
-            "suburb": self.suburb_var.get().strip(),
-            "town": self.town_var.get().strip(),
+            "suburb": suburb,
+            "town": town,
             "role": self.role_var.get().strip(),
             "council_name": self.council_name_var.get().strip(),
-            "description_of_work": self.description_of_work_text.strip(),
+            "description_of_work": self.description_of_work_var.get().strip(),
             # "legel_description" matches a typo baked into the PS1 template's placeholder token.
-            "legel_description": self.legal_description_text.strip(),
+            "legel_description": self._legal_description(),
             # "site_verfication" matches a typo baked into the PS1 template's placeholder token.
             "site_verfication": self.site_verification_text.strip(),
             "all_box": CHECKED if all_part == "All" else UNCHECKED,
@@ -407,7 +419,12 @@ class ReviewStepMixin:
         # every other document; .get() with a default reads far better
         # than a growing all-None tuple per document.
         documents = [
-            {"template": PROJECT_REGISTER_TEMPLATE, "output": DOCUMENT_OUTPUTS[0]},
+            {
+                "template": QA_SID_TEMPLATE,
+                "output": DOCUMENT_OUTPUTS[0],
+                "xlsx_cells": self._build_qa_sid_cells(bullet_lists["scope"]),
+                "xlsx_number_formats": {SID_SHEET: {SID_DATE_CELL: SID_DATE_FORMAT}},
+            },
             {
                 "template": PS1_TEMPLATE,
                 "output": DOCUMENT_OUTPUTS[1],
@@ -422,6 +439,7 @@ class ReviewStepMixin:
             {
                 "template": CALCULATION_STATEMENT_TEMPLATE,
                 "output": DOCUMENT_OUTPUTS[3],
+                "copy_only": True,
             },
             {
                 "template": SPECIFICATION_TEMPLATE,
@@ -433,12 +451,6 @@ class ReviewStepMixin:
                 "template": B2_LETTER_TEMPLATE,
                 "output": DOCUMENT_OUTPUTS[5],
                 "keep_table_rows": {0: b2_letter_materials},
-            },
-            {
-                "template": QA_SID_TEMPLATE,
-                "output": DOCUMENT_OUTPUTS[6],
-                "xlsx_cells": self._build_qa_sid_cells(bullet_lists["scope"]),
-                "xlsx_number_formats": {SID_SHEET: {SID_DATE_CELL: SID_DATE_FORMAT}},
             },
         ]
 
@@ -600,7 +612,9 @@ class ReviewStepMixin:
         bullet_lists = job["bullet_lists"]
 
         try:
-            archive = _archive_existing_documents(created["engineer"], [doc["output"] for doc in job["documents"]])
+            archive = _archive_existing_documents(
+                created["engineer"], [doc["output"] for doc in job["documents"]] + LEGACY_DOCUMENT_OUTPUTS
+            )
         except OSError as exc:
             logger.exception("Failed to move previous documents aside")
             return summary, (
@@ -620,6 +634,16 @@ class ReviewStepMixin:
                 logger.info("Template not found at %s, skipping", template_path)
                 continue
             try:
+                if doc.get("copy_only"):
+                    # A fixed document (the Calculation Statement PDF): copied
+                    # as-is. Never overwrites, like the fillers.
+                    output = created["engineer"] / relative_output
+                    if output.exists():
+                        raise FileExistsError(f"Output file already exists, not overwriting: {output}")
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(template_path, output)
+                    summary += f"\n{relative_output}: {output}"
+                    continue
                 if "xlsx_cells" in doc:
                     output_path = excel_filler.fill_xlsx_template(
                         str(template_path),

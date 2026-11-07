@@ -13,6 +13,7 @@ shown - no widget is touched here.
 from __future__ import annotations
 
 import datetime
+import re
 from typing import Any
 
 import tkinter as tk
@@ -22,6 +23,7 @@ from app.gui.constants import (
     B2_LETTER_MATERIALS,
     CM_ITEMS,
     INSPECTION_ITEM_LABELS,
+    LEGAL_FORMAT_LOT_DP,
     SCOPE_ITEMS,
     SPECIFICATION_NUMERIC_FIELDS,
     SPECIFICATION_SECTIONS,
@@ -51,8 +53,11 @@ class ProjectStateMixin:
             self.scope_vars[item]["description"] = ""
 
         self.council_name_var.set("")
-        self.description_of_work_text = ""
-        self.legal_description_text = ""
+        self.description_of_work_var.set("")
+        self.legal_format_var.set(LEGAL_FORMAT_LOT_DP)
+        self.legal_other_format_var.set("")
+        self.legal_first_value_var.set("")
+        self.legal_second_value_var.set("")
         self.site_verification_text = ""
         self.all_part_var.set("")
         for item in CM_ITEMS:
@@ -130,8 +135,12 @@ class ProjectStateMixin:
             },
             "ps1": {
                 "council_name": self.council_name_var.get(),
-                "description_of_work": self.description_of_work_text,
-                "legal_description": self.legal_description_text,
+                "description_of_work": self.description_of_work_var.get(),
+                # The built text, plus what it's built from (reopening uses those).
+                "legal_description": self._legal_description(),
+                "legal_format": self.legal_format_var.get(),
+                "legal_other_format": self.legal_other_format_var.get(),
+                "legal_values": [self.legal_first_value_var.get(), self.legal_second_value_var.get()],
                 "site_verification": self.site_verification_text,
                 "all_part": self.all_part_var.get(),
                 "cm": [item for item in CM_ITEMS if self.cm_vars[item].get()],
@@ -163,6 +172,22 @@ class ProjectStateMixin:
             },
         }
 
+    def _apply_legal_description(self, ps1: dict[str, Any]) -> None:
+        if "legal_values" in ps1:
+            self.legal_format_var.set(ps1.get("legal_format", LEGAL_FORMAT_LOT_DP))
+            self.legal_other_format_var.set(ps1.get("legal_other_format", ""))
+            first, second = (list(ps1["legal_values"]) + ["", ""])[:2]
+        else:
+            # Saved before the Lot/DP fields: free text. "Lot 12 DP 34567"
+            # is split back into its values; anything else can't be, so it
+            # has to be re-entered.
+            self.legal_format_var.set(LEGAL_FORMAT_LOT_DP)
+            self.legal_other_format_var.set("")
+            match = re.fullmatch(r"\s*Lot\s+(\S+)\s+DP\s+(\S+)\s*", ps1.get("legal_description", ""), re.IGNORECASE)
+            first, second = match.groups() if match else ("", "")
+        self.legal_first_value_var.set(first)
+        self.legal_second_value_var.set(second)
+
     def _apply_project_data(self, data: dict[str, Any]) -> None:
         """Restore fields from a _collect_project_data() dict. Job number and
         Street are left as they are - in "documents_only" they come from the
@@ -184,8 +209,8 @@ class ProjectStateMixin:
 
         ps1 = data.get("ps1", {})
         self.council_name_var.set(ps1.get("council_name", ""))
-        self.description_of_work_text = ps1.get("description_of_work", "")
-        self.legal_description_text = ps1.get("legal_description", "")
+        self.description_of_work_var.set(ps1.get("description_of_work", ""))
+        self._apply_legal_description(ps1)
         self.site_verification_text = ps1.get("site_verification", "")
         self.all_part_var.set(ps1.get("all_part", ""))
         for item in ps1.get("cm", []):

@@ -7,8 +7,9 @@ then **Create**:
 
 1. Builds the project folder structure on three NAS drives (Engineer /
    Drafting / Admin), named `"{job number} - {street}"`
-2. Fills six Word templates (Project register, PS1 Producer Statement, LBP
-   form, Calculation Statement, Specifications, B2 Letter) - real Word
+2. Fills four Word templates (PS1 Producer Statement, LBP form,
+   Specifications, B2 Letter) and copies the fixed Calculation Statement
+   PDF - real Word
    checkboxes, genuine bulleted lists, user-selected sections/table rows -
    plus the QA / Safety in Design Excel workbook (scope, project, date)
 3. Creates the matching Contact and Project in
@@ -65,7 +66,7 @@ app/
         specification_step, b2_letter_step, minutedock_step,
         review_step (Create orchestration + worker), review_summary
 
-resources/templates/           # the six Word templates + the QA / SiD Excel workbook
+resources/templates/           # four Word templates, the Calculation Statement PDF + the QA / SiD Excel workbook
 build_scripts/                 # PyInstaller spec, Inno Setup script, icon + PDF scripts (see its README)
 .github/workflows/release.yml  # builds + publishes a GitHub release (tag v<version>)
 USER_GUIDE.md / HANDOFF.md
@@ -73,20 +74,21 @@ USER_GUIDE.md / HANDOFF.md
 
 ## Word templates (`resources/templates/`)
 
-- **Project register.docx** - `{{job_number}}`, `{{address}}` (street only), `{{scope}}` (bulleted list).
 - **PS1 Producer Statement.docx** - text tokens, tagged Word checkbox content
   controls, `{{scope}}` list, and the Schedule of Inspections table (rows
   selected, reordered, and unlimited "Other" rows cloned from a prototype row).
 - **LBP form.docx** - per-Scope-item table (checkbox + bulleted description +
   role + drawing reference) and the Waivers YES/NO section.
-- **Calculation Statement.docx** - copied unchanged.
+- **Calculation Statement.pdf** - fixed content, copied unchanged (documents
+  entry with `copy_only`).
 - **Specifications.docx** - 7 `"Title 1"` sections, unselected ones deleted;
   numeric tokens; CONCRETE - GENERAL's strength lines are each optional
   (unticked lines deleted via `remove_paragraphs_with_tokens`; the
   Foundations line is built as `{{foundation_strengths}}`).
 - **B2 Letter.docx** - text tokens; material rows selected.
 - **Engsolution_Post_Interactive_QA_and_SiD_Simple.xlsx** (`excel_filler.py`,
-  openpyxl; output keeps this name, in `06 Consent Document`) - no tokens,
+  openpyxl; output keeps this name, directly in the Engineer project folder; the Word
+  documents go in `06 Consent Document`) - no tokens,
   fixed cells (`QA_*`/`SID_*` in constants.py): QA Process `B5` = "Scope" +
   one ` - line` per scope bullet (row height grown to fit); Safety in Design
   `B4` = project folder name, `B5` = the PS1 date as a real date shown

@@ -100,6 +100,12 @@ UNCHECKED = "☐"
 
 DRIVE_KEYS = ("engineer_drive", "drafting_drive", "admin_drive")
 
+# PS1 Legal description formats: the usual "Lot <n> DP <n>", or a
+# user-added Other format (two labels, saved in "legal_description_formats").
+LEGAL_FORMAT_LOT_DP = "lot_dp"
+LEGAL_FORMAT_OTHER = "other"
+LEGAL_LOT_DP_LABELS = ("Lot", "DP")
+
 # Fixed label width (characters) on the PS1/Waivers steps so every input
 # widget starts at the same x position, regardless of label text length.
 LABEL_WIDTH = 20
@@ -108,10 +114,10 @@ LABEL_WIDTH = 20
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "resources" / "templates"
 # Window/title-bar icon (also the exe/installer icon - see build_scripts/make_icon.py).
 APP_ICON = TEMPLATES_DIR.parent / "app_icon.ico"
-PROJECT_REGISTER_TEMPLATE = TEMPLATES_DIR / "Project register.docx"
 PS1_TEMPLATE = TEMPLATES_DIR / "PS1 Producer Statement.docx"
 LBP_TEMPLATE = TEMPLATES_DIR / "LBP form.docx"
-CALCULATION_STATEMENT_TEMPLATE = TEMPLATES_DIR / "Calculation Statement.docx"
+# Nothing to fill in - copied into the project as-is.
+CALCULATION_STATEMENT_TEMPLATE = TEMPLATES_DIR / "Calculation Statement.pdf"
 SPECIFICATION_TEMPLATE = TEMPLATES_DIR / "Specifications.docx"
 B2_LETTER_TEMPLATE = TEMPLATES_DIR / "B2 Letter.docx"
 QA_SID_TEMPLATE = TEMPLATES_DIR / "Engsolution_Post_Interactive_QA_and_SiD_Simple.xlsx"

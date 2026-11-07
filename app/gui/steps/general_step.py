@@ -14,8 +14,15 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
+from app.config.settings import save_settings
 from app.core import folder_creator, minutedock_client
 from app.core.minutedock_client import MinuteDockError
+
+# Suburb/Town dropdowns: kind -> (settings key, label).
+PLACE_LISTS = {
+    "suburb": ("suburb_names", "Suburb"),
+    "town": ("town_names", "Town"),
+}
 
 
 class GeneralStepMixin:
@@ -38,6 +45,7 @@ class GeneralStepMixin:
         self._new_contact_names: list[str] = []
         self._contact_combobox: ttk.Combobox | None = None
         self._contact_status_label: ttk.Label | None = None
+        self._place_comboboxes: dict[str, ttk.Combobox] = {}
 
     # ---------- Step: General ----------
     def _build_general_step(self, parent: ttk.Frame) -> None:
@@ -83,11 +91,30 @@ class GeneralStepMixin:
         if locked:
             self.street_entry.configure(state="readonly")
 
-        ttk.Label(parent, text="Suburb:").grid(row=4, column=0, sticky="w", pady=4)
-        ttk.Entry(parent, textvariable=self.suburb_var, width=40).grid(row=4, column=1, sticky="w", pady=4, padx=8)
-
-        ttk.Label(parent, text="Town:").grid(row=5, column=0, sticky="w", pady=4)
-        ttk.Entry(parent, textvariable=self.town_var, width=40).grid(row=5, column=1, sticky="w", pady=4, padx=8)
+        # Suburb/Town are picked from user-maintained lists, like the PS1
+        # step's council list (Add/Edit - see _add_place_name etc.).
+        for row, kind in ((4, "suburb"), (5, "town")):
+            label = PLACE_LISTS[kind][1]
+            names = self._saved_place_names(kind)
+            ttk.Label(parent, text=f"{label}:").grid(row=row, column=0, sticky="w", pady=4)
+            place_row = ttk.Frame(parent)
+            place_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=4, padx=8)
+            combo = ttk.Combobox(
+                place_row,
+                textvariable=getattr(self, f"{kind}_var"),
+                values=names,
+                width=37,
+                state="readonly" if names else "disabled",
+            )
+            combo.grid(row=0, column=0, sticky="w")
+            self._place_comboboxes[kind] = combo
+            for column, (text, command) in enumerate(
+                (("Add...", self._add_place_name), ("Edit...", self._edit_place_name)),
+                start=1,
+            ):
+                ttk.Button(place_row, text=text, command=lambda c=command, k=kind: c(k)).grid(
+                    row=0, column=column, padx=(8, 0)
+                )
 
         self.availability_label = ttk.Label(parent, textvariable=self.availability_var, wraplength=560, justify="left")
         self.availability_label.grid(row=6, column=0, columnspan=3, sticky="w", pady=(4, 8))
@@ -165,6 +192,66 @@ class GeneralStepMixin:
         self.client_info_var.set(name)
         self._set_contact_status(f'"{name}" will be added to MinuteDock contacts when you click Create.', "green")
 
+    # ---------- Suburb / Town lists ----------
+    # kind ("suburb"/"town") -> its settings key and label. The lists are
+    # app settings (like council_names), so renaming a name never changes a
+    # saved project that already uses it.
+    def _saved_place_names(self, kind: str) -> list[str]:
+        return sorted(self.settings.get(PLACE_LISTS[kind][0], []), key=str.casefold)
+
+    def _refresh_place_combobox(self, kind: str) -> None:
+        combo = self._place_comboboxes.get(kind)
+        if combo is not None and combo.winfo_exists():
+            names = self._saved_place_names(kind)
+            combo.configure(values=names, state="readonly" if names else "disabled")
+
+    def _ask_new_place_name(self, kind: str) -> str | None:
+        """Ask for a name and add it to the list (also used by the batch
+        Jobs step). Returns the name - the existing spelling if it's already
+        listed, matched case-insensitively - or None if cancelled."""
+        key, label = PLACE_LISTS[kind]
+        name = simpledialog.askstring(f"Add {label}", f"{label} name:", parent=self)
+        if not name or not name.strip():
+            return None
+        name = name.strip()
+
+        names = self.settings.setdefault(key, [])
+        existing = {n.casefold(): n for n in names}
+        if name.casefold() in existing:
+            return existing[name.casefold()]
+        names.append(name)
+        save_settings(self.settings)
+        return name
+
+    def _add_place_name(self, kind: str) -> None:
+        name = self._ask_new_place_name(kind)
+        if name is not None:
+            getattr(self, f"{kind}_var").set(name)
+            self._refresh_place_combobox(kind)
+
+    def _edit_place_name(self, kind: str) -> None:
+        key, label = PLACE_LISTS[kind]
+        names = self.settings.get(key, [])
+        current = getattr(self, f"{kind}_var").get().strip()
+        if not current or current not in names:
+            messagebox.showinfo(f"Edit {label}", f"Select a {label.lower()} from the list first.")
+            return
+
+        new_name = simpledialog.askstring(f"Edit {label}", f"{label} name:", initialvalue=current, parent=self)
+        if not new_name or not new_name.strip():
+            return
+        new_name = new_name.strip()
+        if new_name == current:
+            return
+        if new_name.casefold() in {n.casefold() for n in names if n != current}:
+            messagebox.showerror(f"Edit {label}", f'"{new_name}" already exists.')
+            return
+
+        names[names.index(current)] = new_name
+        save_settings(self.settings)
+        getattr(self, f"{kind}_var").set(new_name)
+        self._refresh_place_combobox(kind)
+
     # ---------- Job number availability ----------
     def _update_availability_status(self) -> None:
         # The label lives on the General step and gets destroyed whenever the
@@ -219,10 +306,10 @@ class GeneralStepMixin:
             messagebox.showerror("Missing info", "Street is required.")
             return False
         if not self.suburb_var.get().strip():
-            messagebox.showerror("Missing info", "Suburb is required.")
+            messagebox.showerror("Missing info", 'Suburb is required - pick one, or add it with "Add...".')
             return False
         if not self.town_var.get().strip():
-            messagebox.showerror("Missing info", "Town is required.")
+            messagebox.showerror("Missing info", 'Town is required - pick one, or add it with "Add...".')
             return False
 
         if self.create_mode_var.get() != "documents_only":

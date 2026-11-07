@@ -8,4 +8,4 @@ for every release - an installer built with an old number is never offered
 as an update.
 """
 
-__version__ = "1.0.4"
+__version__ = "1.0.5"

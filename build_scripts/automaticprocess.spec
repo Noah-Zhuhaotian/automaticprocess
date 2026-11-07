@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller build spec - onedir (folder), windowed (no console popup),
-bundles the document templates (six Word, one Excel) and the app icon.
+bundles the document templates (four Word, one Excel, one PDF) and the app icon.
 
 Build from the repo root:
     pyinstaller build_scripts/automaticprocess.spec

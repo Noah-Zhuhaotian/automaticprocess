@@ -28,7 +28,7 @@ from app.gui.constants import (
 )
 from app.gui.steps.mode_step import CREATE_MODE_OPTIONS
 from app.gui.steps.template_step import NO_TEMPLATE
-from app.gui.steps.review_step import DOCUMENT_OUTPUTS, PREVIOUS_VERSIONS_FOLDER
+from app.gui.steps.review_step import DOCUMENT_OUTPUTS, LEGACY_DOCUMENT_OUTPUTS, PREVIOUS_VERSIONS_FOLDER
 
 # (section title, [(label, value), ...]) - a value may span several lines.
 Summary = list[tuple[str, list[tuple[str, str]]]]
@@ -157,7 +157,7 @@ class ReviewSummaryMixin:
         if mode == "documents_only":
             rows.append(("Existing folder", f"{self.settings.get('engineer_drive', '')}\\{project_name}"))
             engineer = Path(self.settings.get("engineer_drive", "")) / project_name
-            if any((engineer / doc).exists() for doc in DOCUMENT_OUTPUTS):
+            if any((engineer / doc).exists() for doc in DOCUMENT_OUTPUTS + LEGACY_DOCUMENT_OUTPUTS):
                 rows.append(
                     (
                         "Existing documents",
@@ -178,8 +178,8 @@ class ReviewSummaryMixin:
             rows.append(
                 (
                     "Documents",
-                    "Project register, PS1 Producer Statement, LBP form, Calculation Statement, "
-                    "Specifications, B2 Letter, QA / Safety in Design (Excel)",
+                    "QA / Safety in Design (Excel), PS1 Producer Statement, LBP form, "
+                    "Calculation Statement (PDF), Specifications, B2 Letter",
                 )
             )
         return "Create", rows
@@ -225,8 +225,8 @@ class ReviewSummaryMixin:
             basis.append(f"Alternative - {ALTERNATIVE_SOLUTION_TEXT}")
         return [
             ("Council", _text(self.council_name_var.get())),
-            ("Description of work", _text(self.description_of_work_text)),
-            ("Legal description", _text(self.legal_description_text)),
+            ("Description of work", _text(self.description_of_work_var.get())),
+            ("Legal description", _text(self._legal_description())),
             ("Site verification", _text(self.site_verification_text)),
             ("Scope of statement", _text(self.all_part_var.get())),
             ("Construction monitoring", ", ".join(cm) if cm else "(none ticked)"),

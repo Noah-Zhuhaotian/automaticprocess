@@ -1,8 +1,8 @@
 """Step: Scope - which of the six scope items apply (each with a
 free-text description) plus the Role. Only shown when Word documents are
 being generated ("documents_only" / "both" Create modes), right after
-General: the selected items feed the Project register's and PS1's
-{{scope}} bullet list and the LBP form's restricted-building-work table,
+General: the selected items feed the PS1's {{scope}} bullet list, the
+QA / SiD workbook's scope cell and the LBP form's restricted-building-work table,
 where Role fills each selected item's "Carried out / Supervised" cell.
 """
 

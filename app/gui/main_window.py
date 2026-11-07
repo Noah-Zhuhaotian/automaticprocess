@@ -61,7 +61,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any
 
-from app.config.settings import load_settings
+from app.config.settings import load_settings, refresh_shared_lists
 from app.gui.constants import APP_ICON
 from app.gui.project_state import ProjectStateMixin
 from app.gui.steps.b2_letter_step import B2LetterStepMixin
@@ -300,6 +300,8 @@ class MainWindow(
     def _show_step(self, index: int) -> None:
         for child in self.content_frame.winfo_children():
             child.destroy()
+        # Pick up drop-down lists another PC changed in the shared data folder.
+        refresh_shared_lists(self.settings)
 
         step = self.steps[index]
         header = f"Step {index + 1} of {len(self.steps)}: {step['title']}"

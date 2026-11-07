@@ -7,7 +7,7 @@ This guide is for everyday users - no code or technical background needed, just 
 You fill in one step-by-step form, and the software does the repetitive project setup for you:
 
 1. **Creates the project folders** - one folder on each of the Engineer, Drafting and Admin drives, named "job number - street" (e.g. "23432 - 217 Armagh Street"). The Engineer folder also gets 6 fixed subfolders (01 Architectural ... 06 Consent Document).
-2. **Fills in the documents** - six Word documents (Project register, PS1 Producer Statement, LBP form, Calculation Statement, Specifications, B2 Letter) and the QA / Safety in Design Excel workbook are generated from what you entered. The Excel workbook gets the scope (QA Process sheet), and the project name and date in dd/mm/yy (Safety in Design sheet); it's saved in "06 Consent Document".
+2. **Fills in the documents** - four Word documents (PS1 Producer Statement, LBP form, Specifications, B2 Letter) and the QA / Safety in Design Excel workbook are generated from what you entered, and the Calculation Statement PDF (always the same) is copied in. The Word documents and the PDF are saved in "06 Consent Document". The Excel workbook gets the scope (QA Process sheet), and the project name and date in dd/mm/yy (Safety in Design sheet); it's saved directly in the Engineer project folder.
 3. **Sets the project up in MinuteDock** - the client (Contact) and the project are created in MinuteDock, so time can be logged against it.
 
 You choose at the start whether to do all three, only create the folders, or come back later to fill in the documents. You can also save your usual settings as a **template**, and create several jobs at once from a template.
@@ -53,6 +53,20 @@ The app sets up every project in MinuteDock, so it needs an access token.
 
 Treat the token like a password. If you think it's been leaked, delete it on the Manage Access Tokens page and create a new one.
 
+### Shared data folder (optional, recommended when more than one person uses the app)
+
+Pick a folder on the NAS (e.g. `\\NAS\Office\AutomaticProcess`) and set the **same folder** on every PC. Then everyone shares:
+
+- the saved projects - anyone can use "Open an existing project" on a job someone else created, and change or regenerate it;
+- the templates;
+- the drop-down lists (councils, descriptions of work, suburbs, towns, legal description formats, Inspection "Other" items).
+
+The drive paths and the MinuteDock token stay per PC (each person uses their own token).
+
+When you first set it, the projects, templates and list entries already on your PC are copied into the shared folder (anything already there is kept, never overwritten), so nothing is lost. The folder must be reachable when you click **Save**. Leave it empty to keep everything on your PC only.
+
+If two people change the same project at the same time, the one who clicks Create/Update last wins - agree who's working on which job.
+
 ## Step 1 - Choose what to do (Create mode)
 
 Every project starts on the **Create mode** page. Pick one:
@@ -84,7 +98,7 @@ In MinuteDock, no new project is made - the job's existing project is used, and 
 
 - **Job number**: the job number. **Job numbers must be unique** - you can't continue if the number is already used by any project folder on any of the three drives (whatever its street), or by any project in MinuteDock (including archived ones). A message under the fields tells you straight away if the number is taken.
 - **Client info**: pick the client from the list of your MinuteDock contacts. If it's a new client, click **Add new contact...** and type the name - it's added to MinuteDock when you click Create. (**Refresh** reloads the list from MinuteDock. If MinuteDock can't be reached, you can type the name directly.)
-- **Street / Suburb / Town**: the address. Only the Street is used in the folder name.
+- **Street / Suburb / Town**: the address. Only the Street is used in the folder name. Suburb and Town are picked from lists you keep yourself, like the Council list: **Add...** adds a name (and selects it), **Edit...** renames the selected one (projects already using it don't change). The PS1 (after "AT:" and in Schedule 2) and the Specifications cover show the full address ("street, suburb, town").
 
 When you're opening an existing project, the client is fixed to the one its MinuteDock project already belongs to.
 
@@ -96,13 +110,15 @@ When you're opening an existing project, the client is fixed to the one its Minu
 ## Step 4 - PS1 Input
 
 - **Council name**: pick from the list. **Add Council...** adds a new one (it stays in the list from then on); **Edit Council...** renames one.
-- **Description of work**, **Legal description**, **Site verification**: free text.
+- **Description of work**: picked from a list you keep yourself, like the Council - **Add...** adds one (and selects it), **Edit...** renames the selected one.
+- **Legal description**: usually "Lot ... DP ..." - just type the two numbers (e.g. 12 and 34567 → "Lot 12 DP 34567"; the result is shown next to the boxes). For another format pick **Other format** and choose one from the list; **Add...** asks for the two words of a new format (e.g. "Section" and "SO" → "Section 3 SO 1234"), **Edit...** renames the selected one. Optional, but if you fill one number you must fill both.
+- **Site verification**: free text.
 - **Scope of statement**: All or Part only.
 - **Level of construction monitoring**: CM1 to CM5, tick any.
 - **Basis of statement**: Compliance and/or Alternative (at least one).
   - Compliance enables the **Compliance method(s)**: B1/VM1, B1/VM2, B1/AS1.
   - Alternative fills the **Alternative solution** automatically with "Repairing and rebuilding houses affected by the Canterbury Earthquake December 2012." - nothing to type. If Alternative isn't ticked it shows "N/A".
-- **Date**: type the year first, then pick the month and day - or click **Today**.
+- **Date** (required): starts as today. To change it, type the year first, then pick the month and day - or click **Today** to go back to today. It's also the date on the Specifications cover.
 
 ## Step 5 - Inspection Schedule
 
@@ -159,7 +175,7 @@ A template stores everything **except** the General page (job number, client, ad
 1. On the Create mode page choose **Create several jobs from a template** and pick the **Template**.
 2. On the **Jobs** page:
    - **Date**: the date written into every job's PS1 report. It starts as today - change the year/month/day if you need another date, or click **Today** to go back to today.
-   - Fill in one row per job: Job number, Client, Street, Suburb, Town. **Add job** adds a row; **Remove** deletes one.
+   - Fill in one row per job: Job number, Client, Street, Suburb, Town. **Add job** adds a row; **Remove** deletes one. Suburb/Town come from the same lists as on the General step; **Add suburb...** / **Add town...** add to them (rename on the General step).
    - **Client**: pick an existing MinuteDock client from the dropdown. For a new client, click **Add new client...** and type the name - it then appears in every row's dropdown, and it's created in MinuteDock when you click Create all. (You can also just type a new name straight into the Client box.)
 3. Click Next - the app checks the date and every row (missing fields, the same job number twice in the table, or a job number that's already used).
 4. Review & Create lists all the jobs (new clients are marked "new, added to MinuteDock on Create"), the date, and the template's settings. Click **Create all**.
@@ -188,4 +204,4 @@ Usually the file (or the template) is open in Word - close it and try again.
 The app checks for new versions on GitHub over the internet - check the internet connection and try again later. Nothing on your computer was changed.
 
 **Q: Where is my saved data kept?**
-In your Windows user folder (`%APPDATA%\AutomaticProcess`): settings, saved projects (`projects`), templates (`templates`) and logs. It's only on this computer, and software updates don't remove it.
+In your Windows user folder (`%APPDATA%\AutomaticProcess`): settings and logs, plus saved projects (`projects`) and templates (`templates`) - unless a **Shared data folder** is set in Settings, then projects, templates and the drop-down lists are in that folder (shared with everyone). Software updates don't remove any of it.

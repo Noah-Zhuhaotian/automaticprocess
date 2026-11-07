@@ -4,9 +4,10 @@ PS1 date - Scope, Role, PS1, Inspection Schedule, Waivers, Specification,
 B2 Letter and the MinuteDock budget. Used to start a new job (or a batch of
 jobs) pre-filled.
 
-One JSON file per template in %APPDATA%\\AutomaticProcess\\templates\\, next
-to the per-project saves (app/core/project_store.py) and, like them, outside
-the install directory, so app updates and uninstalls leave them alone.
+One JSON file per template in <data_dir>\\templates\\ (the shared data
+folder if one is set, otherwise %APPDATA%\\AutomaticProcess), next to the
+per-project saves (app/core/project_store.py) and, like them, outside the
+install directory, so app updates and uninstalls leave them alone.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.config.settings import get_settings_path
+from app.config.settings import data_dir
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -32,7 +33,7 @@ class TemplateError(Exception):
 
 
 def templates_dir() -> Path:
-    directory = get_settings_path().parent / "templates"
+    directory = data_dir() / "templates"
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 

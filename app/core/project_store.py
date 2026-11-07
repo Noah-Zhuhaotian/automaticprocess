@@ -2,13 +2,12 @@
 opened again later and its documents regenerated with changes.
 
 One JSON file per project, named by job number (unique per job), in
-%APPDATA%\\AutomaticProcess\\projects\\ - next to user_settings.json and the
-logs, deliberately *not* inside the project folders themselves, and not in
-the install directory either: the installer only replaces files under
-Program Files, so app updates (and uninstalls) leave this data alone.
-
-Local to this computer/Windows account by design (single-user for now); a
-shared location would be a later, separate change.
+<data_dir>\\projects\\ - the shared data folder (Settings, e.g. on the NAS,
+so everyone sees and can edit the same saves) if one is set, otherwise
+%APPDATA%\\AutomaticProcess. Deliberately *not* inside the project folders
+themselves, and not in the install directory either: the installer only
+replaces files under Program Files, so app updates (and uninstalls) leave
+this data alone.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.config.settings import get_settings_path
+from app.config.settings import data_dir
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -31,7 +30,7 @@ _INVALID_CHARS = re.compile(r'[\\/:*?"<>|]')
 
 
 def projects_dir() -> Path:
-    directory = get_settings_path().parent / "projects"
+    directory = data_dir() / "projects"
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 

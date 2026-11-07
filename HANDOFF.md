@@ -23,7 +23,8 @@ history of earlier sessions was retired from this file - it's in git
   communicates in **Chinese** but wants **all code, comments and UI text
   in English**. Reply to them in Chinese.
 - A wizard collects a job's details and then: creates project folders on 3
-  drives, fills 6 Word templates + 1 Excel workbook (QA / Safety in Design),
+  drives, fills 4 Word templates + 1 Excel workbook (QA / Safety in Design),
+  copies 1 fixed PDF (Calculation Statement),
   and creates the job in **MinuteDock**
   (timesheet SaaS, REST API).
 - Repo: https://github.com/Noah-Zhuhaotian/automaticprocess (`main`).
@@ -51,11 +52,25 @@ Other behaviour worth knowing:
   or any MinuteDock Project (active *or* archived) has that Short Code.
 - **General** = Job number, Client info (MinuteDock Contact picker: pick
   existing / "Add new contact..." - created at Create time), Street, Suburb,
-  Town. In `documents_only`, Job number/Street are locked (they're the
+  Town. Suburb/Town are read-only dropdowns of user-maintained lists
+  (settings `suburb_names`/`town_names`), managed like the council list:
+  Add/Edit (`general_step`, `PLACE_LISTS`); the batch Jobs table uses the
+  same lists and has Add buttons. In `documents_only`, Job number/Street are locked (they're the
   folder name) and Client is locked if the job's MinuteDock Project exists.
+- **Addresses in documents**: `{{address}}` = "street, suburb, town" (PS1
+  "AT:" + Schedule 2's report title, and the Specifications cover); B2
+  Letter/LBP use `{{street}}`/`{{suburb}}`/`{{town}}` separately.
+- **PS1 date** defaults to today when the PS1 step is first shown and is
+  required (not in `edit_template` - templates don't store it); it also
+  fills the Specifications cover date.
 - **Scope** step = 6 scope items (tick + multi-line description → bullet
   points) + Role.
-- **PS1 Input**: council (persisted list), 3 free-text fields, All/Part,
+- **PS1 Input**: council and Description of work (persisted lists
+  `council_names`/`description_of_work_names`, Add/Edit via ps1_step's
+  `_add_list_name`/`_edit_list_name`), Legal description (two values +
+  format: built-in Lot/DP or an Other format = two labels from
+  `legal_description_formats`, Add/Edit; `_legal_description()` builds
+  "Lot 12 DP 34567"), Site verification (free text), All/Part,
   CM1-5, Compliance (B1/VM1, B1/VM2, B1/AS1) and/or Alternative (fixed text
   `ALTERNATIVE_SOLUTION_TEXT`, read-only), date.
 - **Inspection Schedule**: 7 fixed items + unlimited "Other" rows whose
@@ -76,15 +91,23 @@ Other behaviour worth knowing:
   New creations (incl. first-time documents for a folder-only project)
   keep "Create".
 - **Saved projects**: every successful/partial Create saves all wizard input
-  to `%APPDATA%\AutomaticProcess\projects\<job>.json`; "Open an existing
+  to `<data_dir>\projects\<job>.json`; "Open an existing
   project" lists empty project folders + folders with a save, and reloads it.
-- **Templates**: `%APPDATA%\AutomaticProcess\templates\<name>.json` =
+- **Templates**: `<data_dir>\templates\<name>.json` =
   everything except General and the PS1 date. Apply on Create mode ("Start
   from template"), save from Review, manage (Edit values / Rename / Delete).
 - All user data (`user_settings.json`, `projects/`, `templates/`, `logs/`)
   is under `%APPDATA%\AutomaticProcess`. The installer only writes Program
   Files, so updates/uninstalls never delete it (requirement from the user).
-  Local to one PC/user by design for now.
+- **Shared data folder** (Settings, optional, e.g. on the NAS): then
+  `data_dir()` (settings.py) is that folder, so `projects/` and
+  `templates/` live there, and the dropdown lists (`SHARED_LIST_KEYS`) are
+  written to its `shared_settings.json` by `save_settings` and re-read by
+  `refresh_shared_lists` on every `_show_step` (and at startup). Drives,
+  token and logs stay per-PC. Switching folders copies the old location's
+  projects/templates (never overwriting) and merges the lists
+  (`app/core/shared_data.py`). No locking: concurrent edits of one project
+  are last-write-wins.
 
 ## 3. Code map
 
@@ -103,6 +126,7 @@ app/core/            (no tkinter - safe to call from the Create worker thread)
                       update_project_budget
   project_store.py    save_project / load_project / saved_job_numbers
   template_store.py   list/load/save/rename/delete templates
+  shared_data.py      switching to a shared data folder: copy saves, merge lists
   updater.py          check_for_update / download_installer / launch_installer
 app/version.py        __version__
 app/config/settings.py  DEFAULT_SETTINGS, load_settings/save_settings
@@ -276,9 +300,13 @@ There's no test suite (`tests/` is empty). Every feature was verified with
 throwaway headless scripts that drive the real `MainWindow`. Conventions
 that matter (each one was learned from a real failure):
 
-- **Never touch the user's real data.** Patch the *importing* module's
-  names: `app.gui.main_window.load_settings`, plus
+- **Never touch the user's real data.** Simplest: patch
+  `app.config.settings.get_settings_path` to a temp file (then the real
+  load/save_settings and `data_dir()` all stay in temp). Otherwise patch the
+  *importing* module's names: `app.gui.main_window.load_settings`, plus
   `app.gui.steps.inspection_step.save_settings`,
+  `app.gui.steps.general_step.save_settings` (Suburb/Town lists),
+  `app.gui.steps.ps1_step.save_settings` (Council/Description lists, legal formats),
   `app.gui.steps.settings_step.save_settings` if a test reaches them,
   `project_store.projects_dir` and `template_store.templates_dir` → temp
   dirs. (A test once called the real `_save_settings` and corrupted the
@@ -323,8 +351,8 @@ the D: drive were cleaned up.
    (`**` shows literally). The real end-to-end upgrade (download → UAC →
    silent install → app reopens) is untested until a 1.0.1 install
    upgrades to 1.0.2.
-2. Saved projects/templates are single-PC; a shared location (a Settings
-   path on the NAS) was discussed as a later step if the user needs it.
+2. Shared data folder is in (section 2) but untested on the real NAS /
+   two real PCs; there's no locking (last write wins).
 3. No automated tests - the scripts described in section 7 would be a good
    base for a pytest suite.
 4. Ideas mentioned but not requested: managing saved Inspection "Other"
@@ -332,6 +360,48 @@ the D: drive were cleaned up.
    strength line.
 
 ## 9. Recent history (newest first)
+
+Shared data folder (two people were generating on separate PCs with
+separate saves). Verified headless with temp "appdata" + temp "NAS":
+switch copies/keeps files, list merge (case-insensitive), refresh picks up
+another PC's list change, list add writes the shared file, fresh
+load_settings reads it, error paths, Settings dialog screenshot.
+
+PS1 Legal description: free text -> Lot/DP (or an Other two-label format)
++ two values. Saves store the built text plus `legal_format`,
+`legal_other_format`, `legal_values`; older saves' "Lot X DP Y" text is
+split back into values on reopen (other old text must be re-entered).
+Verified headless (preview, validation, Add/Edit, save/clear/reload,
+legacy parse, screenshot).
+
+Calculation Statement is now a fixed PDF template (exported from the old
+.docx with Word; it had no tokens), copied as-is via a `copy_only`
+documents entry. The old `.docx` output is in `LEGACY_DOCUMENT_OUTPUTS`.
+
+Specifications cover `{{street}}` -> `{{address}}` (template-only, diffed).
+PS1 date defaults to today + is required (a blank date had left the
+Specifications cover date and the PS1 "dated" empty). Checked by exporting
+the generated PS1/Specifications to PDF with Word and looking at the pages.
+
+PS1 template: Schedule 1's `{{scope}}` bullet list is now followed by 3
+empty paragraphs with the placeholder's grey shading (copies of the
+`{{scope}}` paragraph's pPr, no runs), then the original plain empty line
+and Schedule 2 - template-only change, diffed against the original and
+checked in a Word-exported PDF.
+
+PS1 address ("AT:" + Schedule 2) now "street, suburb, town" (was street
+only); Suburb/Town and PS1's Description of work became council-style
+lists (Add/Edit, no Delete - the user doesn't want one);
+`description_of_work_text` became `description_of_work_var` (saved JSON key
+unchanged). Verified headless: PS1 read back, list add/edit/duplicate
+(save_settings stubbed), save/reload round trip, General + PS1 + batch
+Jobs screenshots.
+
+Project register dropped (template deleted). The QA / SiD workbook is now
+generated in its place - the Engineer project folder root - instead of
+`06 Consent Document`. Old outputs at the previous paths
+(`LEGACY_DOCUMENT_OUTPUTS` in review_step) are still archived on
+regeneration.
 
 Specification: Foundations Plain/Fibre made mutually exclusive
 (`SPECIFICATION_EXCLUSIVE_FIELDS`); ticking one unticks/clears the other.
